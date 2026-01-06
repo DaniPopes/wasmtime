@@ -377,6 +377,7 @@ impl<'a> Lexer<'a> {
             "i32" => types::I32,
             "i64" => types::I64,
             "i128" => types::I128,
+            "i256" => types::I256,
             "f16" => types::F16,
             "f32" => types::F32,
             "f64" => types::F64,

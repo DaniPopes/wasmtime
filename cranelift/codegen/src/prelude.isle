@@ -209,6 +209,7 @@
 (extern const $I32 Type)
 (extern const $I64 Type)
 (extern const $I128 Type)
+(extern const $I256 Type)
 
 (extern const $F16 Type)
 (extern const $F32 Type)

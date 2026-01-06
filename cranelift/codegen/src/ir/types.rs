@@ -12,7 +12,7 @@ use target_lexicon::{PointerWidth, Triple};
 /// field is present put no type is needed, such as the controlling type variable for a
 /// non-polymorphic instruction.
 ///
-/// Basic integer types: `I8`, `I16`, `I32`, `I64`, and `I128`. These types are sign-agnostic.
+/// Basic integer types: `I8`, `I16`, `I32`, `I64`, `I128`, and `I256`. These types are sign-agnostic.
 ///
 /// Basic floating point types: `F16`, `F32`, `F64`, and `F128`. IEEE half, single, double, and quadruple precision.
 ///
@@ -60,6 +60,7 @@ impl Type {
             I32 | F32 => 5,
             I64 | F64 => 6,
             I128 | F128 => 7,
+            I256 => 8,
             _ => 0,
         }
     }
@@ -72,6 +73,7 @@ impl Type {
             I32 | F32 => 32,
             I64 | F64 => 64,
             I128 | F128 => 128,
+            I256 => 256,
             _ => 0,
         }
     }
@@ -110,6 +112,7 @@ impl Type {
             32 => Some(I32),
             64 => Some(I64),
             128 => Some(I128),
+            256 => Some(I256),
             _ => None,
         }
     }
@@ -140,6 +143,7 @@ impl Type {
             I32 | F32 => I32,
             I64 | F64 => I64,
             I128 | F128 => I128,
+            I256 => I256,
             _ => I8,
         })
     }
@@ -164,6 +168,7 @@ impl Type {
             I32 | F32 => I32,
             I64 | F64 => I64,
             I128 | F128 => I128,
+            I256 => I256,
             _ => unimplemented!(),
         })
     }
@@ -176,6 +181,7 @@ impl Type {
             I32 => I16,
             I64 => I32,
             I128 => I64,
+            I256 => I128,
             F32 => F16,
             F64 => F32,
             F128 => F64,
@@ -191,6 +197,7 @@ impl Type {
             I16 => I32,
             I32 => I64,
             I64 => I128,
+            I128 => I256,
             F16 => F32,
             F32 => F64,
             F64 => F128,
@@ -230,7 +237,7 @@ impl Type {
     /// Is this a scalar integer type?
     pub fn is_int(self) -> bool {
         match self {
-            I8 | I16 | I32 | I64 | I128 => true,
+            I8 | I16 | I32 | I64 | I128 | I256 => true,
             _ => false,
         }
     }
@@ -476,6 +483,7 @@ mod tests {
         assert_eq!(I32, I32.lane_type());
         assert_eq!(I64, I64.lane_type());
         assert_eq!(I128, I128.lane_type());
+        assert_eq!(I256, I256.lane_type());
         assert_eq!(F32, F32.lane_type());
         assert_eq!(F16, F16.lane_type());
         assert_eq!(F64, F64.lane_type());
@@ -489,6 +497,7 @@ mod tests {
         assert_eq!(I32.lane_bits(), 32);
         assert_eq!(I64.lane_bits(), 64);
         assert_eq!(I128.lane_bits(), 128);
+        assert_eq!(I256.lane_bits(), 256);
         assert_eq!(F16.lane_bits(), 16);
         assert_eq!(F32.lane_bits(), 32);
         assert_eq!(F64.lane_bits(), 64);
@@ -505,6 +514,7 @@ mod tests {
         assert_eq!(I32X4.half_width(), Some(I16X4));
         assert_eq!(I64.half_width(), Some(I32));
         assert_eq!(I128.half_width(), Some(I64));
+        assert_eq!(I256.half_width(), Some(I128));
         assert_eq!(F16.half_width(), None);
         assert_eq!(F32.half_width(), Some(F16));
         assert_eq!(F64.half_width(), Some(F32));
@@ -516,7 +526,8 @@ mod tests {
         assert_eq!(I32.double_width(), Some(I64));
         assert_eq!(I32X4.double_width(), Some(I64X4));
         assert_eq!(I64.double_width(), Some(I128));
-        assert_eq!(I128.double_width(), None);
+        assert_eq!(I128.double_width(), Some(I256));
+        assert_eq!(I256.double_width(), None);
         assert_eq!(F16.double_width(), Some(F32));
         assert_eq!(F32.double_width(), Some(F64));
         assert_eq!(F64.double_width(), Some(F128));
@@ -583,6 +594,7 @@ mod tests {
         assert_eq!(I32.to_string(), "i32");
         assert_eq!(I64.to_string(), "i64");
         assert_eq!(I128.to_string(), "i128");
+        assert_eq!(I256.to_string(), "i256");
         assert_eq!(F32.to_string(), "f32");
         assert_eq!(F64.to_string(), "f64");
     }
@@ -610,11 +622,13 @@ mod tests {
         assert_eq!(Type::int(8), Some(I8));
         assert_eq!(Type::int(33), None);
         assert_eq!(Type::int(64), Some(I64));
+        assert_eq!(Type::int(256), Some(I256));
 
         assert_eq!(Type::int_with_byte_size(0), None);
         assert_eq!(Type::int_with_byte_size(2), Some(I16));
         assert_eq!(Type::int_with_byte_size(6), None);
         assert_eq!(Type::int_with_byte_size(16), Some(I128));
+        assert_eq!(Type::int_with_byte_size(32), Some(I256));
 
         // Ensure `int_with_byte_size` handles overflow properly
         let evil = 0xE001_u16;

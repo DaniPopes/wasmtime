@@ -169,6 +169,7 @@ impl LaneType {
                 LaneType::Int(shared_types::Int::I32) => 6,
                 LaneType::Int(shared_types::Int::I64) => 7,
                 LaneType::Int(shared_types::Int::I128) => 8,
+                LaneType::Int(shared_types::Int::I256) => 13,
                 LaneType::Float(shared_types::Float::F16) => 9,
                 LaneType::Float(shared_types::Float::F32) => 10,
                 LaneType::Float(shared_types::Float::F64) => 11,
@@ -183,6 +184,7 @@ impl LaneType {
             32 => shared_types::Int::I32,
             64 => shared_types::Int::I64,
             128 => shared_types::Int::I128,
+            256 => shared_types::Int::I256,
             _ => unreachable!("unexpected num bits for int"),
         })
     }
