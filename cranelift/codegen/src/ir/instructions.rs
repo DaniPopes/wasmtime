@@ -821,8 +821,8 @@ type BitSet16 = ScalarBitSet<u16>;
 pub struct ValueTypeSet {
     /// Allowed lane sizes
     pub lanes: BitSet16,
-    /// Allowed int widths
-    pub ints: BitSet8,
+    /// Allowed int widths (log2 of bit width: 3=8bit, 4=16bit, ..., 8=256bit)
+    pub ints: BitSet16,
     /// Allowed float widths
     pub floats: BitSet8,
     /// Allowed dynamic vectors minimum lane sizes
@@ -981,7 +981,7 @@ impl OperandConstraint {
                 if ctrl_type.is_int() {
                     // The upper bound in from_range is exclusive, and we want to exclude the
                     // control type to construct the interval of [I8, ctrl_type).
-                    tys.ints = BitSet8::from_range(3, ctrl_type_bits as u8);
+                    tys.ints = BitSet16::from_range(3, ctrl_type_bits as u8);
                 } else if ctrl_type.is_float() {
                     // The upper bound in from_range is exclusive, and we want to exclude the
                     // control type to construct the interval of [F16, ctrl_type).
@@ -1002,16 +1002,15 @@ impl OperandConstraint {
 
                 if ctrl_type.is_int() {
                     let lower_bound = ctrl_type_bits as u8 + 1;
-                    // The largest integer type we can represent in `BitSet8` is I128, which is
-                    // represented by bit 7 in the bit set. Adding one to exclude I128 from the
-                    // lower bound would overflow as 2^8 doesn't fit in a u8, but this would
-                    // already describe the empty set so instead we leave `ints` in its default
-                    // empty state.
-                    if lower_bound < BitSet8::capacity() {
+                    // The largest integer type we can represent is I256, which is
+                    // represented by bit 8 in the bit set. Adding one to exclude I256 from the
+                    // lower bound would give us 9, but this would already describe the empty set
+                    // so instead we leave `ints` in its default empty state.
+                    if lower_bound < 9 {
                         // The interval should include all types wider than `ctrl_type`, so we use
-                        // `2^8` as the upper bound, and add one to the bits of `ctrl_type` to define
-                        // the interval `(ctrl_type, I128]`.
-                        tys.ints = BitSet8::from_range(lower_bound, 8);
+                        // 9 as the upper bound (to include I256), and add one to the bits of
+                        // `ctrl_type` to define the interval `(ctrl_type, I256]`.
+                        tys.ints = BitSet16::from_range(lower_bound, 9);
                     }
                 } else if ctrl_type.is_float() {
                     // Same as above but for `tys.floats`, as the largest float type is F128.
@@ -1256,7 +1255,7 @@ mod tests {
 
         let vts = ValueTypeSet {
             lanes: BitSet16::from_range(0, 8),
-            ints: BitSet8::from_range(4, 7),
+            ints: BitSet16::from_range(4, 7),
             floats: BitSet8::from_range(0, 0),
             dynamic_lanes: BitSet16::from_range(0, 4),
         };
@@ -1272,7 +1271,7 @@ mod tests {
 
         let vts = ValueTypeSet {
             lanes: BitSet16::from_range(0, 8),
-            ints: BitSet8::from_range(0, 0),
+            ints: BitSet16::from_range(0, 0),
             floats: BitSet8::from_range(5, 7),
             dynamic_lanes: BitSet16::from_range(0, 8),
         };
@@ -1280,7 +1279,7 @@ mod tests {
 
         let vts = ValueTypeSet {
             lanes: BitSet16::from_range(1, 8),
-            ints: BitSet8::from_range(0, 0),
+            ints: BitSet16::from_range(0, 0),
             floats: BitSet8::from_range(5, 7),
             dynamic_lanes: BitSet16::from_range(0, 8),
         };
@@ -1288,7 +1287,7 @@ mod tests {
 
         let vts = ValueTypeSet {
             lanes: BitSet16::from_range(2, 8),
-            ints: BitSet8::from_range(3, 7),
+            ints: BitSet16::from_range(3, 7),
             floats: BitSet8::from_range(0, 0),
             dynamic_lanes: BitSet16::from_range(0, 8),
         };
@@ -1297,7 +1296,7 @@ mod tests {
         let vts = ValueTypeSet {
             // TypeSet(lanes=(1, 256), ints=(8, 64))
             lanes: BitSet16::from_range(0, 9),
-            ints: BitSet8::from_range(3, 7),
+            ints: BitSet16::from_range(3, 7),
             floats: BitSet8::from_range(0, 0),
             dynamic_lanes: BitSet16::from_range(0, 8),
         };

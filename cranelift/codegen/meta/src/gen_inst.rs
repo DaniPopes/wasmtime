@@ -862,7 +862,7 @@ pub(crate) fn gen_typesets_table(type_sets: &UniqueTable<TypeSet>, fmt: &mut For
                 fmt.comment(typeset_to_string(ts));
                 gen_bitset(&ts.lanes, "lanes", 16, fmt);
                 gen_bitset(&ts.dynamic_lanes, "dynamic_lanes", 16, fmt);
-                gen_bitset(&ts.ints, "ints", 8, fmt);
+                gen_bitset(&ts.ints, "ints", 16, fmt);
                 gen_bitset(&ts.floats, "floats", 8, fmt);
             });
             fmt.line(",");

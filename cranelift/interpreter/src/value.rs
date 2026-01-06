@@ -6,6 +6,7 @@
 use core::fmt::{self, Display, Formatter};
 use core::ops::Neg;
 use cranelift_codegen::data_value::{DataValue, DataValueCastFailure};
+use cranelift_codegen::ir::I256;
 use cranelift_codegen::ir::immediates::{Ieee16, Ieee32, Ieee64, Ieee128};
 use cranelift_codegen::ir::{Type, types};
 use thiserror::Error;
@@ -233,6 +234,12 @@ macro_rules! bitop {
             (DataValue::I32(a), DataValue::I32(b)) => DataValue::I32(a $op b),
             (DataValue::I64(a), DataValue::I64(b)) => DataValue::I64(a $op b),
             (DataValue::I128(a), DataValue::I128(b)) => DataValue::I128(a $op b),
+            (DataValue::I256(a), DataValue::I256(b)) => DataValue::I256(I256::from_limbs([
+                a.limbs()[0] $op b.limbs()[0],
+                a.limbs()[1] $op b.limbs()[1],
+                a.limbs()[2] $op b.limbs()[2],
+                a.limbs()[3] $op b.limbs()[3],
+            ])),
             (DataValue::F32(a), DataValue::F32(b)) => DataValue::F32(a $op b),
             (DataValue::F64(a), DataValue::F64(b)) => DataValue::F64(a $op b),
             (DataValue::V64(a), DataValue::V64(b)) => {
@@ -503,6 +510,7 @@ impl DataValueExt for DataValue {
             DataValue::I32(f) => Ok(*f == 0),
             DataValue::I64(f) => Ok(*f == 0),
             DataValue::I128(f) => Ok(*f == 0),
+            DataValue::I256(f) => Ok(f.is_zero()),
             DataValue::F16(f) => Ok(f.is_zero()),
             DataValue::F32(f) => Ok(f.is_zero()),
             DataValue::F64(f) => Ok(f.is_zero()),
