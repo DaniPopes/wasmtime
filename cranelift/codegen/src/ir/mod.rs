@@ -13,6 +13,7 @@ mod extfunc;
 mod extname;
 pub mod function;
 mod globalvalue;
+mod i256;
 pub mod immediates;
 pub mod instructions;
 pub mod jumptable;
@@ -72,6 +73,7 @@ pub use crate::ir::trapcode::TrapCode;
 pub use crate::ir::types::Type;
 pub(crate) use crate::ir::user_stack_maps::UserStackMapEntryVec;
 pub use crate::ir::user_stack_maps::{UserStackMap, UserStackMapEntry};
+pub use crate::ir::i256::I256;
 
 use crate::entity::{PrimaryMap, SecondaryMap, entity_impl};
 

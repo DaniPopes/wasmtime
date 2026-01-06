@@ -21,7 +21,7 @@ use cranelift_codegen::ir::{DebugTag, types::*};
 use cranelift_codegen::ir::{
     AbiParam, ArgumentExtension, ArgumentPurpose, Block, BlockArg, Constant, ConstantData,
     DynamicStackSlot, DynamicStackSlotData, DynamicTypeData, ExtFuncData, ExternalName, FuncRef,
-    Function, GlobalValue, GlobalValueData, JumpTableData, MemFlags, MemoryTypeData,
+    Function, GlobalValue, GlobalValueData, I256, JumpTableData, MemFlags, MemoryTypeData,
     MemoryTypeField, Opcode, SigRef, Signature, StackSlot, StackSlotData, StackSlotKind,
     UserFuncName, Value, types,
 };
@@ -2973,6 +2973,16 @@ impl<'a> Parser<'a> {
             I32 => DataValue::from(self.match_imm32("expected an i32")?),
             I64 => DataValue::from(Into::<i64>::into(self.match_imm64("expected an i64")?)),
             I128 => DataValue::from(self.match_imm128("expected an i128")?),
+            I256 => {
+                let const_data = self
+                    .match_hexadecimal_constant("expected a hexadecimal i256 constant")?
+                    .expand_to(32);
+                if const_data.len() != 32 {
+                    return Err(self.error("expected 32 bytes for i256"));
+                }
+                let bytes: [u8; 32] = const_data.into_vec().try_into().unwrap();
+                DataValue::from(I256::from_le_bytes(bytes))
+            }
             F16 => DataValue::from(self.match_ieee16("expected an f16")?),
             F32 => DataValue::from(self.match_ieee32("expected an f32")?),
             F64 => DataValue::from(self.match_ieee64("expected an f64")?),

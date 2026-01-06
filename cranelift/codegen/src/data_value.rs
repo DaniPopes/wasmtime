@@ -1,5 +1,6 @@
 //! This module gives users to instantiate values that Cranelift understands. These values are used,
 //! for example, during interpretation and for wrapping immediates.
+use crate::ir::I256;
 use crate::ir::immediates::{Ieee16, Ieee32, Ieee64, Ieee128, Offset32};
 use crate::ir::{ConstantData, Type, types};
 use core::cmp::Ordering;
@@ -17,6 +18,7 @@ pub enum DataValue {
     I32(i32),
     I64(i64),
     I128(i128),
+    I256(I256),
     F16(Ieee16),
     F32(Ieee32),
     F64(Ieee64),
@@ -41,6 +43,8 @@ impl PartialEq for DataValue {
             (I64(_), _) => false,
             (I128(l), I128(r)) => l == r,
             (I128(_), _) => false,
+            (I256(l), I256(r)) => l == r,
+            (I256(_), _) => false,
             (F16(l), F16(r)) => l.partial_cmp(&r) == Some(Ordering::Equal),
             (F16(_), _) => false,
             (F32(l), F32(r)) => l.as_f32() == r.as_f32(),
@@ -83,6 +87,7 @@ impl DataValue {
             DataValue::I32(_) => types::I32,
             DataValue::I64(_) => types::I64,
             DataValue::I128(_) => types::I128,
+            DataValue::I256(_) => types::I256,
             DataValue::F16(_) => types::F16,
             DataValue::F32(_) => types::F32,
             DataValue::F64(_) => types::F64,
@@ -109,6 +114,7 @@ impl DataValue {
             DataValue::I32(i) => DataValue::I32(i.swap_bytes()),
             DataValue::I64(i) => DataValue::I64(i.swap_bytes()),
             DataValue::I128(i) => DataValue::I128(i.swap_bytes()),
+            DataValue::I256(v) => DataValue::I256(v.swap_bytes()),
             DataValue::F16(f) => DataValue::F16(Ieee16::with_bits(f.bits().swap_bytes())),
             DataValue::F32(f) => DataValue::F32(Ieee32::with_bits(f.bits().swap_bytes())),
             DataValue::F64(f) => DataValue::F64(Ieee64::with_bits(f.bits().swap_bytes())),
@@ -162,6 +168,7 @@ impl DataValue {
             DataValue::I32(i) => dst[..4].copy_from_slice(&i.to_ne_bytes()[..]),
             DataValue::I64(i) => dst[..8].copy_from_slice(&i.to_ne_bytes()[..]),
             DataValue::I128(i) => dst[..16].copy_from_slice(&i.to_ne_bytes()[..]),
+            DataValue::I256(v) => dst[..32].copy_from_slice(&v.to_le_bytes()[..]),
             DataValue::F16(f) => dst[..2].copy_from_slice(&f.bits().to_ne_bytes()[..]),
             DataValue::F32(f) => dst[..4].copy_from_slice(&f.bits().to_ne_bytes()[..]),
             DataValue::F64(f) => dst[..8].copy_from_slice(&f.bits().to_ne_bytes()[..]),
@@ -203,6 +210,10 @@ impl DataValue {
             types::I32 => DataValue::I32(i32::from_ne_bytes(src[..4].try_into().unwrap())),
             types::I64 => DataValue::I64(i64::from_ne_bytes(src[..8].try_into().unwrap())),
             types::I128 => DataValue::I128(i128::from_ne_bytes(src[..16].try_into().unwrap())),
+            types::I256 => {
+                let bytes: [u8; 32] = src[..32].try_into().unwrap();
+                DataValue::I256(I256::from_le_bytes(bytes))
+            }
             types::F16 => DataValue::F16(Ieee16::with_bits(u16::from_ne_bytes(
                 src[..2].try_into().unwrap(),
             ))),
@@ -334,6 +345,7 @@ build_conversion_impl!(i16, I16, I16);
 build_conversion_impl!(i32, I32, I32);
 build_conversion_impl!(i64, I64, I64);
 build_conversion_impl!(i128, I128, I128);
+build_conversion_impl!(I256, I256, I256);
 build_conversion_impl!(Ieee16, F16, F16);
 build_conversion_impl!(Ieee32, F32, F32);
 build_conversion_impl!(Ieee64, F64, F64);
@@ -356,6 +368,10 @@ impl Display for DataValue {
             DataValue::I32(dv) => write!(f, "{dv}"),
             DataValue::I64(dv) => write!(f, "{dv}"),
             DataValue::I128(dv) => write!(f, "{dv}"),
+            DataValue::I256(dv) => {
+                let bytes = dv.to_le_bytes();
+                write!(f, "{}", ConstantData::from(&bytes[..]))
+            }
             // The Ieee* wrappers here print the expected syntax.
             DataValue::F16(dv) => write!(f, "{dv}"),
             DataValue::F32(dv) => write!(f, "{dv}"),
