@@ -548,6 +548,8 @@ impl DataValueExt for DataValue {
     fn add(self, other: Self) -> ValueResult<Self> {
         if self.is_float() {
             binary_match!(+(self, other); [F32, F64])
+        } else if let (DataValue::I256(a), DataValue::I256(b)) = (&self, &other) {
+            Ok(DataValue::I256(a.wrapping_add(*b)))
         } else {
             binary_match!(wrapping_add(&self, &other); [I8, I16, I32, I64, I128])
         }
@@ -556,6 +558,8 @@ impl DataValueExt for DataValue {
     fn sub(self, other: Self) -> ValueResult<Self> {
         if self.is_float() {
             binary_match!(-(self, other); [F32, F64])
+        } else if let (DataValue::I256(a), DataValue::I256(b)) = (&self, &other) {
+            Ok(DataValue::I256(a.wrapping_sub(*b)))
         } else {
             binary_match!(wrapping_sub(&self, &other); [I8, I16, I32, I64, I128])
         }
@@ -564,6 +568,8 @@ impl DataValueExt for DataValue {
     fn mul(self, other: Self) -> ValueResult<Self> {
         if self.is_float() {
             binary_match!(*(self, other); [F32, F64])
+        } else if let (DataValue::I256(a), DataValue::I256(b)) = (&self, &other) {
+            Ok(DataValue::I256(a.wrapping_mul(*b)))
         } else {
             binary_match!(wrapping_mul(&self, &other); [I8, I16, I32, I64, I128])
         }
@@ -745,17 +751,29 @@ impl DataValueExt for DataValue {
 
     fn shl(self, other: Self) -> ValueResult<Self> {
         let amt = other.convert(ValueConversionKind::Exact(types::I32))?;
-        binary_match!(wrapping_shl(&self, &amt); [I8, I16, I32, I64, I128]; [i8, i16, i32, i64, i128]; rhs: I32,u32)
+        if let (DataValue::I256(a), DataValue::I32(b)) = (&self, &amt) {
+            Ok(DataValue::I256(a.wrapping_shl(*b as u32)))
+        } else {
+            binary_match!(wrapping_shl(&self, &amt); [I8, I16, I32, I64, I128]; [i8, i16, i32, i64, i128]; rhs: I32,u32)
+        }
     }
 
     fn ushr(self, other: Self) -> ValueResult<Self> {
         let amt = other.convert(ValueConversionKind::Exact(types::I32))?;
-        binary_match!(wrapping_shr(&self, &amt); [I8, I16, I32, I64, I128]; [u8, u16, u32, u64, u128]; rhs: I32,u32)
+        if let (DataValue::I256(a), DataValue::I32(b)) = (&self, &amt) {
+            Ok(DataValue::I256(a.wrapping_ushr(*b as u32)))
+        } else {
+            binary_match!(wrapping_shr(&self, &amt); [I8, I16, I32, I64, I128]; [u8, u16, u32, u64, u128]; rhs: I32,u32)
+        }
     }
 
     fn sshr(self, other: Self) -> ValueResult<Self> {
         let amt = other.convert(ValueConversionKind::Exact(types::I32))?;
-        binary_match!(wrapping_shr(&self, &amt); [I8, I16, I32, I64, I128]; [i8, i16, i32, i64, i128]; rhs: I32,u32)
+        if let (DataValue::I256(a), DataValue::I32(b)) = (&self, &amt) {
+            Ok(DataValue::I256(a.wrapping_sshr(*b as u32)))
+        } else {
+            binary_match!(wrapping_shr(&self, &amt); [I8, I16, I32, I64, I128]; [i8, i16, i32, i64, i128]; rhs: I32,u32)
+        }
     }
 
     fn rotl(self, other: Self) -> ValueResult<Self> {
@@ -787,6 +805,7 @@ impl DataValueExt for DataValue {
             DataValue::I32(a) => DataValue::I32(!a),
             DataValue::I64(a) => DataValue::I64(!a),
             DataValue::I128(a) => DataValue::I128(!a),
+            DataValue::I256(a) => DataValue::I256(a.not()),
             DataValue::F32(a) => DataValue::F32(!a),
             DataValue::F64(a) => DataValue::F64(!a),
             DataValue::V64(mut a) => {

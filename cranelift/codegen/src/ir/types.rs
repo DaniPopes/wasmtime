@@ -80,6 +80,10 @@ impl Type {
 
     /// Get the (minimum, maximum) values represented by each lane in the type.
     /// Note that these are returned as unsigned 'bit patterns'.
+    ///
+    /// # Panics
+    ///
+    /// Panics for I256 since its bounds cannot be represented as `u128`.
     pub fn bounds(self, signed: bool) -> (u128, u128) {
         if signed {
             match self.lane_type() {
@@ -88,6 +92,7 @@ impl Type {
                 I32 => (i32::MIN as u128, i32::MAX as u128),
                 I64 => (i64::MIN as u128, i64::MAX as u128),
                 I128 => (i128::MIN as u128, i128::MAX as u128),
+                I256 => panic!("I256 bounds cannot be represented as u128"),
                 _ => unimplemented!(),
             }
         } else {
@@ -97,6 +102,7 @@ impl Type {
                 I32 => (u32::MIN as u128, u32::MAX as u128),
                 I64 => (u64::MIN as u128, u64::MAX as u128),
                 I128 => (u128::MIN, u128::MAX),
+                I256 => panic!("I256 bounds cannot be represented as u128"),
                 _ => unimplemented!(),
             }
         }
