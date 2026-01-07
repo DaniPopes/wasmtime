@@ -53,6 +53,7 @@ pub use crate::ir::extfunc::{
 pub use crate::ir::extname::{ExternalName, UserExternalName, UserFuncName};
 pub use crate::ir::function::Function;
 pub use crate::ir::globalvalue::GlobalValueData;
+pub use crate::ir::i256::I256;
 pub use crate::ir::instructions::{
     BlockArg, BlockCall, InstructionData, Opcode, ValueList, ValueListPool, VariableArgs,
 };
@@ -73,7 +74,6 @@ pub use crate::ir::trapcode::TrapCode;
 pub use crate::ir::types::Type;
 pub(crate) use crate::ir::user_stack_maps::UserStackMapEntryVec;
 pub use crate::ir::user_stack_maps::{UserStackMap, UserStackMapEntry};
-pub use crate::ir::i256::I256;
 
 use crate::entity::{PrimaryMap, SecondaryMap, entity_impl};
 

@@ -347,7 +347,10 @@ impl I256 {
     /// Count the number of ones.
     #[inline]
     pub fn count_ones(&self) -> u32 {
-        self.0[0].count_ones() + self.0[1].count_ones() + self.0[2].count_ones() + self.0[3].count_ones()
+        self.0[0].count_ones()
+            + self.0[1].count_ones()
+            + self.0[2].count_ones()
+            + self.0[3].count_ones()
     }
 
     /// Reverse the byte order.
@@ -761,7 +764,12 @@ mod tests {
 
     #[test]
     fn test_swap_bytes() {
-        let val = I256::from_limbs([0x0102030405060708, 0x090a0b0c0d0e0f10, 0x1112131415161718, 0x191a1b1c1d1e1f20]);
+        let val = I256::from_limbs([
+            0x0102030405060708,
+            0x090a0b0c0d0e0f10,
+            0x1112131415161718,
+            0x191a1b1c1d1e1f20,
+        ]);
         let swapped = val.swap_bytes();
         assert_eq!(swapped.limbs()[0], 0x201f1e1d1c1b1a19);
         assert_eq!(swapped.limbs()[3], 0x0807060504030201);

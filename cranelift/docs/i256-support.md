@@ -127,9 +127,10 @@ This document describes the additions made to Cranelift to support 256-bit integ
 - Attempting to compile functions with I256 operations will fail at the lowering stage.
 
 ### Constant Folding (cprop.isle)
-- The optimizer passes use `fits_in_64` guards for constant propagation.
-- I256 constants are not yet folded at compile time.
-- **Next step**: Add I256-specific rules using the new wrapper type's arithmetic.
+- **IMPLEMENTED**: I256 constants that fit in 64 bits are folded at compile time.
+- The optimizer matches extension chains (`uextend.i256 (uextend.i128 (iconst.i64 k))`) and folds arithmetic operations (iadd, isub, imul) and bitwise operations (band, bor, bxor).
+- Overflow is handled by checking if the result fits in u64; if not, the operation is left unfolded.
+- Full I256 arithmetic (for constants larger than 64 bits) is not yet implemented.
 
 ### Type Bounds
 - `Type::bounds()` does not handle I256 because it returns `(u128, u128)`.
@@ -163,11 +164,14 @@ cargo test -p cranelift-codegen --features all-arch
 
 # Parser filetests including I256
 cargo run -p cranelift-tools -- test filetests/filetests/parser/i256.clif
+
+# I256 optimizer tests
+cargo run -p cranelift-tools -- test filetests/filetests/egraph/i256-opts.clif
 ```
 
 ## Future Work
 
-1. **Constant Folding**: Add I256 rules to `cprop.isle` using the wrapper's arithmetic methods.
+1. **Full I256 Constant Folding**: Add I256 rules for constants larger than 64 bits using the wrapper's arithmetic methods.
 
 2. **Backend Lowering**: Add I256 lowering rules for each target ISA, decomposing into 64-bit or 128-bit operations.
 

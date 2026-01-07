@@ -93,3 +93,7 @@
 ;; Try to transform an `iconcat` into an i128 into either an sextend or uextend
 (rule (simplify (iconcat $I128 x (iconst_u _ 0))) (uextend $I128 x))
 (rule (simplify (iconcat $I128 x (sshr _ x (iconst_u _ 63)))) (sextend $I128 x))
+
+;; Try to transform an `iconcat` into an i256 into either an sextend or uextend
+(rule (simplify (iconcat $I256 x (iconst_u _ 0))) (uextend $I256 x))
+(rule (simplify (iconcat $I256 x (sshr _ x (iconst_u _ 127)))) (sextend $I256 x))
