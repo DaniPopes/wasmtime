@@ -702,6 +702,12 @@ pub(crate) fn define(
         TypeSetBuilder::new().ints(8..64).build(),
     );
 
+    let NarrowOrWideInt = &TypeVar::new(
+        "NarrowOrWideInt",
+        "An integer type including I128 and I256",
+        TypeSetBuilder::new().ints(Interval::All).build(),
+    );
+
     let ScalarTruthy = &TypeVar::new(
         "ScalarTruthy",
         "A scalar truthy type",
@@ -1443,12 +1449,15 @@ pub(crate) fn define(
 
         Create a scalar integer SSA value with an immediate constant value, or
         an integer vector where all the lanes have the same value.
+
+        For types wider than 64 bits (I128, I256), the immediate value is
+        sign-extended to fill the wider type.
         "#,
             &formats.unary_imm,
         )
         .operands_in(vec![Operand::new("N", &imm.imm64)])
         .operands_out(vec![
-            Operand::new("a", NarrowInt).with_doc("A constant integer scalar or vector value"),
+            Operand::new("a", NarrowOrWideInt).with_doc("A constant integer scalar or vector value"),
         ]),
     );
 
