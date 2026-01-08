@@ -2,9 +2,9 @@ test optimize
 set opt_level=speed
 target x86_64
 
-;; There's no `iconst.i128`, so these tests check that the various patterns
-;; that might apply to `i128` introduce extended 64-bit constants instead,
-;; or they're sufficiently conditioned to not apply.
+;; There's no backend support for iconst.i128, so these tests check that the
+;; various patterns that might apply to `i128` introduce extended 64-bit
+;; constants instead, or they're sufficiently conditioned to not apply.
 
 function %bxor_self_i128(i128) -> i128 {
 block0(v0: i128):

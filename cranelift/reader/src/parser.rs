@@ -31,7 +31,6 @@ use cranelift_codegen::{settings, settings::Configurable, timing};
 use smallvec::SmallVec;
 use std::mem;
 use std::str::FromStr;
-use std::{u16, u32};
 use target_lexicon::Triple;
 
 macro_rules! match_imm {
@@ -821,6 +820,30 @@ impl<'a> Parser<'a> {
     // Match and consume an i128 immediate.
     fn match_imm128(&mut self, err_msg: &str) -> ParseResult<i128> {
         match_imm!(i128, u128, self, err_msg)
+    }
+
+    // Match and consume an i256 immediate.
+    fn match_imm256(&mut self, err_msg: &str) -> ParseResult<I256> {
+        if let Some(Token::Integer(text)) = self.token() {
+            self.consume();
+            let text = text.replace('_', "");
+            let negative = text.starts_with('-');
+            let text = text.trim_start_matches(['+', '-']);
+
+            let value = if let Some(hex) = text.strip_prefix("0x") {
+                I256::from_str_radix(hex, 16).map_err(|_| self.error("unable to parse i256 hex"))?
+            } else {
+                I256::from_str_radix(text, 10).map_err(|_| self.error("unable to parse i256"))?
+            };
+
+            Ok(if negative {
+                value.wrapping_neg()
+            } else {
+                value
+            })
+        } else {
+            err!(self.loc, err_msg)
+        }
     }
 
     // Match and consume an optional offset32 immediate.
@@ -2973,16 +2996,7 @@ impl<'a> Parser<'a> {
             I32 => DataValue::from(self.match_imm32("expected an i32")?),
             I64 => DataValue::from(Into::<i64>::into(self.match_imm64("expected an i64")?)),
             I128 => DataValue::from(self.match_imm128("expected an i128")?),
-            I256 => {
-                let const_data = self
-                    .match_hexadecimal_constant("expected a hexadecimal i256 constant")?
-                    .expand_to(32);
-                if const_data.len() != 32 {
-                    return Err(self.error("expected 32 bytes for i256"));
-                }
-                let bytes: [u8; 32] = const_data.into_vec().try_into().unwrap();
-                DataValue::from(I256::from_le_bytes(bytes))
-            }
+            I256 => DataValue::from(self.match_imm256("expected an i256")?),
             F16 => DataValue::from(self.match_ieee16("expected an f16")?),
             F32 => DataValue::from(self.match_ieee32("expected an f32")?),
             F64 => DataValue::from(self.match_ieee64("expected an f64")?),
@@ -3026,11 +3040,13 @@ impl<'a> Parser<'a> {
                     Some(types::I8) => self.match_imm8(&msg(8))? as u8 as i64,
                     Some(types::I16) => self.match_imm16(&msg(16))? as u16 as i64,
                     Some(types::I32) => self.match_imm32(&msg(32))? as u32 as i64,
-                    Some(types::I64) => self.match_imm64(&msg(64))?.bits(),
+                    Some(types::I64) | Some(types::I128) | Some(types::I256) => {
+                        self.match_imm64(&msg(64))?.bits()
+                    }
                     _ => {
                         return err!(
                             self.loc,
-                            "expected one of the following type: i8, i16, i32 or i64"
+                            "expected one of the following type: i8, i16, i32, i64, i128 or i256"
                         );
                     }
                 };

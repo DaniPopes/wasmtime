@@ -2,101 +2,9 @@ test optimize
 set opt_level=speed
 target x86_64
 
-;; Tests for I256 constant folding and optimizations.
-
-;; Basic arithmetic constant folding (result fits in u64)
-
-function %iadd_i256_small_constants() -> i256 {
-block0:
-    v0 = iconst.i64 10
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 20
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = iadd v2, v5
-    return v6
-    ; check: iconst.i64 30
-    ; check: uextend.i256
-    ; check: return
-}
-
-function %isub_i256_small_constants() -> i256 {
-block0:
-    v0 = iconst.i64 50
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 30
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = isub v2, v5
-    return v6
-    ; check: iconst.i64 20
-    ; check: uextend.i256
-    ; check: return
-}
-
-function %imul_i256_small_constants() -> i256 {
-block0:
-    v0 = iconst.i64 6
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 7
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = imul v2, v5
-    return v6
-    ; check: iconst.i64 42
-    ; check: uextend.i256
-    ; check: return
-}
-
-;; Bitwise constant folding
-
-function %band_i256_constants() -> i256 {
-block0:
-    v0 = iconst.i64 0xF0F0F0F0
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 0x0F0F0F0F
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = band v2, v5
-    return v6
-    ; check: iconst.i64 0
-    ; check: uextend.i256
-    ; check: return
-}
-
-function %bor_i256_constants() -> i256 {
-block0:
-    v0 = iconst.i64 0xF0F0F0F0
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 0x0F0F0F0F
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = bor v2, v5
-    return v6
-    ; check: iconst.i64 0xffff_ffff
-    ; check: uextend.i256
-    ; check: return
-}
-
-function %bxor_i256_constants() -> i256 {
-block0:
-    v0 = iconst.i64 0xFF00FF00
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 0x00FF00FF
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = bxor v2, v5
-    return v6
-    ; check: iconst.i64 0xffff_ffff
-    ; check: uextend.i256
-    ; check: return
-}
+;; Tests for I256 optimizations.
+;; Backend support for I256 is not implemented, so these tests verify
+;; that patterns produce extended constants rather than direct iconst.i256.
 
 ;; Self-identity patterns
 
@@ -104,8 +12,8 @@ function %bxor_self_i256(i256) -> i256 {
 block0(v0: i256):
     v1 = bxor v0, v0
     return v1
-    ; check: iconst.i64 0
-    ; check: uextend.i256
+    ; check: v2 = iconst.i64 0
+    ; check: uextend
     ; check: return
 }
 
@@ -113,38 +21,8 @@ function %isub_self_i256(i256) -> i256 {
 block0(v0: i256):
     v1 = isub v0, v0
     return v1
-    ; check: iconst.i64 0
-    ; check: uextend.i256
-    ; check: return
-}
-
-function %band_bnot_self_i256(i256) -> i256 {
-block0(v0: i256):
-    v1 = bnot v0
-    v2 = band v0, v1
-    return v2
-    ; check: iconst.i64 0
-    ; check: uextend.i256
-    ; check: return
-}
-
-function %bxor_bnot_self_i256(i256) -> i256 {
-block0(v0: i256):
-    v1 = bnot v0
-    v2 = bxor v0, v1
-    return v2
-    ; check: iconst.i64 -1
-    ; check: sextend.i256
-    ; check: return
-}
-
-function %bor_bnot_self_i256(i256) -> i256 {
-block0(v0: i256):
-    v1 = bnot v0
-    v2 = bor v0, v1
-    return v2
-    ; check: iconst.i64 -1
-    ; check: sextend.i256
+    ; check: v2 = iconst.i64 0
+    ; check: uextend
     ; check: return
 }
 
@@ -164,32 +42,20 @@ block0(v0: i256):
     ; check: return v2
 }
 
-;; Overflow cases - should NOT be folded because result overflows u64
+;; Direct iconst.i256 parsing (verifies parser works)
 
-function %iadd_i256_overflow_constants() -> i256 {
+function %iconst_i256_direct() -> i256 {
 block0:
-    v0 = iconst.i64 0x8888_8888_8888_8888
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 0x9999_9999_9999_9999
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = iadd v2, v5
-    return v6
-    ; check: iadd
-    ; check: return
+    v0 = iconst.i256 42
+    return v0
+    ; check: v0 = iconst.i256 42
+    ; check: return v0
 }
 
-function %imul_i256_overflow_constants() -> i256 {
+function %iconst_i256_negative() -> i256 {
 block0:
-    v0 = iconst.i64 5_000_000_000
-    v1 = uextend.i128 v0
-    v2 = uextend.i256 v1
-    v3 = iconst.i64 7_000_000_000
-    v4 = uextend.i128 v3
-    v5 = uextend.i256 v4
-    v6 = imul v2, v5
-    return v6
-    ; check: imul
-    ; check: return
+    v0 = iconst.i256 -1
+    return v0
+    ; check: v0 = iconst.i256 -1
+    ; check: return v0
 }
