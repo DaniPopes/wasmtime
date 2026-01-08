@@ -29,52 +29,6 @@
              (iconst ty (u64_from_imm64 k2))))
       (subsume (iconst ty (imm64_masked ty (u64_wrapping_mul k1 k2)))))
 
-;; I256 constant folding for constants that fit in 64 bits.
-;; I256 constants are represented as extension chains:
-;;   uextend $I256 (uextend $I128 (iconst $I64 k))
-;; We match this pattern explicitly and fold at the I64 level.
-;; The result is checked to fit in u64 before folding.
-(rule (simplify
-       (iadd $I256
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k1))))
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k2))))))
-      (if-let result (u64_checked_add k1 k2))
-      (subsume (iconst_u $I256 result)))
-
-(rule (simplify
-       (isub $I256
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k1))))
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k2))))))
-      (if-let result (u64_checked_sub k1 k2))
-      (subsume (iconst_u $I256 result)))
-
-(rule (simplify
-       (imul $I256
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k1))))
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k2))))))
-      (if-let result (u64_checked_mul k1 k2))
-      (subsume (iconst_u $I256 result)))
-
-;; I256 bitwise constant folding.
-;; Bitwise operations don't overflow, so these are always safe.
-(rule (simplify
-       (band $I256
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k1))))
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k2))))))
-      (subsume (iconst_u $I256 (u64_and k1 k2))))
-
-(rule (simplify
-       (bor $I256
-            (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k1))))
-            (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k2))))))
-      (subsume (iconst_u $I256 (u64_or k1 k2))))
-
-(rule (simplify
-       (bxor $I256
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k1))))
-             (uextend $I256 (uextend $I128 (iconst $I64 (u64_from_imm64 k2))))))
-      (subsume (iconst_u $I256 (u64_xor k1 k2))))
-
 (rule (simplify_skeleton
        (sdiv (iconst ty k1)
              (iconst ty k2)))

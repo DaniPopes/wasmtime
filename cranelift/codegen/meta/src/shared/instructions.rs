@@ -702,9 +702,9 @@ pub(crate) fn define(
         TypeSetBuilder::new().ints(8..64).build(),
     );
 
-    let NarrowOrWideInt = &TypeVar::new(
-        "NarrowOrWideInt",
-        "An integer type including I128 and I256",
+    let ScalarInt = &TypeVar::new(
+        "ScalarInt",
+        "An integer type of width up to `i256`",
         TypeSetBuilder::new().ints(Interval::All).build(),
     );
 
@@ -1457,7 +1457,7 @@ pub(crate) fn define(
         )
         .operands_in(vec![Operand::new("N", &imm.imm64)])
         .operands_out(vec![
-            Operand::new("a", NarrowOrWideInt).with_doc("A constant integer scalar or vector value"),
+            Operand::new("a", ScalarInt).with_doc("A constant integer scalar or vector value"),
         ]),
     );
 

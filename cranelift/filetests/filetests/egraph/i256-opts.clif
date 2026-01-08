@@ -3,8 +3,6 @@ set opt_level=speed
 target x86_64
 
 ;; Tests for I256 constant folding and optimizations.
-;; I256 constants are represented as extension chains:
-;;   uextend.i256 (uextend.i128 (iconst.i64 k))
 
 ;; Basic arithmetic constant folding (result fits in u64)
 

@@ -50,6 +50,16 @@ impl I256 {
         self.0
     }
 
+    /// Create a new `I256` from a byte array in native-endian order.
+    #[inline]
+    pub fn from_ne_bytes(bytes: [u8; 32]) -> Self {
+        if cfg!(target_endian = "little") {
+            Self::from_le_bytes(bytes)
+        } else {
+            Self::from_be_bytes(bytes)
+        }
+    }
+
     /// Create an `I256` from a byte array in little-endian order.
     #[inline]
     pub fn from_le_bytes(bytes: [u8; 32]) -> Self {

@@ -210,10 +210,7 @@ impl DataValue {
             types::I32 => DataValue::I32(i32::from_ne_bytes(src[..4].try_into().unwrap())),
             types::I64 => DataValue::I64(i64::from_ne_bytes(src[..8].try_into().unwrap())),
             types::I128 => DataValue::I128(i128::from_ne_bytes(src[..16].try_into().unwrap())),
-            types::I256 => {
-                let bytes: [u8; 32] = src[..32].try_into().unwrap();
-                DataValue::I256(I256::from_le_bytes(bytes))
-            }
+            types::I256 => DataValue::I256(I256::from_ne_bytes(src[..32].try_into().unwrap())),
             types::F16 => DataValue::F16(Ieee16::with_bits(u16::from_ne_bytes(
                 src[..2].try_into().unwrap(),
             ))),
@@ -368,10 +365,7 @@ impl Display for DataValue {
             DataValue::I32(dv) => write!(f, "{dv}"),
             DataValue::I64(dv) => write!(f, "{dv}"),
             DataValue::I128(dv) => write!(f, "{dv}"),
-            DataValue::I256(dv) => {
-                let bytes = dv.to_le_bytes();
-                write!(f, "{}", ConstantData::from(&bytes[..]))
-            }
+            DataValue::I256(dv) => write!(f, "{dv}"),
             // The Ieee* wrappers here print the expected syntax.
             DataValue::F16(dv) => write!(f, "{dv}"),
             DataValue::F32(dv) => write!(f, "{dv}"),
