@@ -1,14 +1,12 @@
 # Cranelift Agent Guide
 
 ## Build & Test Commands
-- Build: `cargo build -p cranelift-codegen --features all-arch`
-- Test all: `cargo test --workspace` (from cranelift/)
-- Single crate: `cargo test -p cranelift-codegen`
-- Single test: `cargo test -p cranelift-codegen test_name`
-- Filetests: `cargo test -p cranelift-filetests`
+- Build: `cargo build -p cranelift-*`
+- Test: `cargo nextest -p cranelift-*`
+- Single test: `cargo nextest -p cranelift-* -- test_name`
 - Run filetest: `cargo run -- test filetests/filetests/runtests/foo.clif`
 - Format: `cargo +nightly fmt --all`
-- Lint: `cargo clippy --all-features --all-targets`
+- Lint: `cargo clippy -p cranelift-* --all-features --all-targets`
 
 ## Architecture
 - **codegen/**: Core compiler - IR, instruction selection (ISLE), register allocation, emission
