@@ -39,8 +39,8 @@ impl ControlPlane {
     /// fuel-limiting is disabled).
     fn consume_fuel(&mut self) -> bool {
         match self.fuel {
-            None => true,               // fuel deactivated
-            Some(f) if f == 0 => false, // no more fuel
+            None => true,     // fuel deactivated
+            Some(0) => false, // no more fuel
             Some(ref mut f) => {
                 *f -= 1;
                 true
