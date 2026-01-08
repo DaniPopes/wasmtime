@@ -1941,23 +1941,25 @@ impl<'a> Verifier<'a> {
         {
             let ctrl_typevar = self.func.dfg.ctrl_typevar(inst);
             let bounds_mask = match ctrl_typevar {
-                types::I8 => u8::MAX.into(),
-                types::I16 => u16::MAX.into(),
-                types::I32 => u32::MAX.into(),
-                types::I64 => u64::MAX,
+                types::I8 => Some(u8::MAX.into()),
+                types::I16 => Some(u16::MAX.into()),
+                types::I32 => Some(u32::MAX.into()),
+                types::I64 => Some(u64::MAX),
+                types::I128 | types::I256 => None,
                 _ => unreachable!(),
             };
 
-            let value = imm.bits() as u64;
-            if value & bounds_mask != value {
-                errors.fatal((
-                    inst,
-                    self.context(inst),
-                    "constant immediate is out of bounds",
-                ))
-            } else {
-                Ok(())
+            if let Some(bounds_mask) = bounds_mask {
+                let value = imm.bits() as u64;
+                if value & bounds_mask != value {
+                    return errors.fatal((
+                        inst,
+                        self.context(inst),
+                        "constant immediate is out of bounds",
+                    ));
+                }
             }
+            Ok(())
         } else {
             Ok(())
         }
@@ -2244,6 +2246,24 @@ mod tests {
     #[test]
     fn valid_iconst_32() {
         test_iconst_bounds_ok(u32::MAX as i64, types::I32);
+    }
+
+    #[test]
+    fn valid_iconst_128() {
+        test_iconst_bounds_ok(0, types::I128);
+        test_iconst_bounds_ok(42, types::I128);
+        test_iconst_bounds_ok(i64::MAX, types::I128);
+        test_iconst_bounds_ok(-1, types::I128);
+        test_iconst_bounds_ok(i64::MIN, types::I128);
+    }
+
+    #[test]
+    fn valid_iconst_256() {
+        test_iconst_bounds_ok(0, types::I256);
+        test_iconst_bounds_ok(42, types::I256);
+        test_iconst_bounds_ok(i64::MAX, types::I256);
+        test_iconst_bounds_ok(-1, types::I256);
+        test_iconst_bounds_ok(i64::MIN, types::I256);
     }
 
     #[test]
