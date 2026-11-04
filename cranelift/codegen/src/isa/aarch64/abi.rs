@@ -245,7 +245,11 @@ impl ABIMachineSpec for AArch64MachineDeps {
                     && i32::try_from(ints + floats).is_ok_and(|n| n <= remaining_reg_vals);
                 if !fits {
                     aggregate_on_stack_until = end;
-                    next_stack = align_to(next_stack, align.max(8));
+                    // Stack slots of at most 16 bytes are aligned, and 8-byte aligned except on
+                    // Apple platforms.
+                    let align = align.min(16);
+                    next_stack =
+                        align_to(next_stack, if is_apple_cc { align } else { align.max(8) });
                     if ints > 0 {
                         next_xreg = max_per_class_reg_vals;
                     }
@@ -480,8 +484,9 @@ impl ABIMachineSpec for AArch64MachineDeps {
 
             next_stack += size;
 
-            if in_stack_aggregate && i + 1 == aggregate_on_stack_until {
-                // The size of an aggregate on the stack is a multiple of 8.
+            if in_stack_aggregate && i + 1 == aggregate_on_stack_until && !is_apple_cc {
+                // The size of an aggregate on the stack is a multiple of 8, except on Apple
+                // platforms.
                 next_stack = align_to(next_stack, 8);
             }
         }
