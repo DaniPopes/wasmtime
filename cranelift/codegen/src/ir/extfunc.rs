@@ -239,8 +239,7 @@ pub enum ArgumentPurpose {
     StructArgument(
         /// The size, in bytes, of the struct.
         u32,
-        /// The alignment, in bytes, of the struct: a power of two, at least 8 for the ABIs
-        /// that lay out structs in 8-byte slots.
+        /// The alignment, in bytes, of the struct: a power of two. `sarg(size)` means 8.
         u32,
     ),
 

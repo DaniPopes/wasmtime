@@ -1982,11 +1982,20 @@ impl<'a> Verifier<'a> {
                 ));
             }
 
-            if let ArgumentPurpose::StructArgument(..) = param.purpose {
+            if let ArgumentPurpose::StructArgument(_, align) = param.purpose {
                 if is_return {
                     errors.report((
                         AnyEntity::Function,
                         format!("{item} at position {i} can't be an struct argument"),
+                    ))
+                }
+                if !align.is_power_of_two() {
+                    errors.report((
+                        AnyEntity::Function,
+                        format!(
+                            "{item} at position {i} has a struct argument alignment of {align}, \
+                             which is not a power of two"
+                        ),
                     ))
                 }
             }

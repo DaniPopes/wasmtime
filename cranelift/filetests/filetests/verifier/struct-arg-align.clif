@@ -1,0 +1,6 @@
+test verifier
+
+function %f(i64 sarg(16, 3)) system_v { ; error: has a struct argument alignment of 3
+block0(v0: i64):
+    return
+}
