@@ -150,31 +150,8 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                 || p.value_type == types::I8X2
         });
 
-        // The parameters before this index belong to an aggregate that goes on the stack.
-        let mut aggregate_on_stack_until = 0;
-
         for (ix, param) in params.iter().enumerate() {
             let last_param = ix == params.len() - 1;
-
-            if args_or_rets == ArgsOrRets::Args
-                && !is_fastcall
-                && let ir::ArgumentPurpose::AggregateStart(count, align) = param.purpose
-            {
-                // An aggregate is passed either entirely in registers or entirely on the stack,
-                // and the registers left over stay available to later arguments.
-                let end = ix + count as usize;
-                let (ints, floats) = aggregate_register_counts::<Inst>(&params[ix..end])?;
-                let fits = (ints == 0
-                    || get_intreg_for_arg(call_conv, next_gpr + ints - 1, next_param_idx)
-                        .is_some())
-                    && (floats == 0
-                        || get_fltreg_for_arg(call_conv, next_vreg + floats - 1, next_param_idx)
-                            .is_some());
-                if !fits {
-                    aggregate_on_stack_until = end;
-                    next_stack = align_to(next_stack, align);
-                }
-            }
 
             if let ir::ArgumentPurpose::StructArgument(size, align) = param.purpose {
                 assert!(
@@ -335,15 +312,12 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                 continue;
             }
 
-            let in_stack_aggregate = ix < aggregate_on_stack_until;
             let mut slots = ABIArgSlotVec::new();
             for (ix, (rc, reg_ty)) in rcs.iter().zip(reg_tys.iter()).enumerate() {
                 let last_slot = last_param && ix == rcs.len() - 1;
 
                 let intreg = *rc == RegClass::Int;
-                let nextreg = if in_stack_aggregate {
-                    None
-                } else if intreg {
+                let nextreg = if intreg {
                     match args_or_rets {
                         ArgsOrRets::Args => get_intreg_for_arg(call_conv, next_gpr, next_param_idx),
                         ArgsOrRets::Rets => {

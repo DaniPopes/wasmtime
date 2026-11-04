@@ -248,12 +248,10 @@ pub enum ArgumentPurpose {
     ///
     /// The aggregate consists of this parameter and the following parameters, in total as many
     /// as the first field says. It is passed either entirely in registers, or entirely on the
-    /// stack if its parts do not all fit in the registers that are left. Where an ABI also
-    /// exhausts the registers of a class when an aggregate goes on the stack, it does so, and
-    /// where an ABI starts a multi-register aggregate at an even register, it does so. The
-    /// aggregate is aligned to the second field on the stack.
+    /// stack if its parts do not all fit in the registers that are left, and then the registers
+    /// of its classes are used up. The aggregate is aligned to the second field on the stack.
     ///
-    /// This only has an effect on arguments, and for some calling conventions.
+    /// This only has an effect on arguments, and only on aarch64.
     AggregateStart(
         /// The number of parameters of the aggregate.
         u32,

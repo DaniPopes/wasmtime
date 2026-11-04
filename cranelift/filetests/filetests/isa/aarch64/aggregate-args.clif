@@ -26,7 +26,8 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v
 ;   ldp x29, x30, [sp], #0x10
 ;   ret
 
-;; An aggregate with an alignment of 16 starts at an even register.
+;; An aggregate that fits starts at the next register, even if it has an
+;; alignment of 16.
 function u0:1(i64, i64 aggregate(2, 16), i64, i64) -> i64 {
 block0(v0: i64, v1: i64, v2: i64, v3: i64):
     return v3
@@ -34,12 +35,12 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64):
 
 ; VCode:
 ; block0:
-;   mov x0, x4
+;   mov x0, x3
 ;   ret
 ;
 ; Disassembled:
 ; block0: ; offset 0x0
-;   mov x0, x4
+;   mov x0, x3
 ;   ret
 
 ;; A float aggregate that does not fit in the vector registers goes on the
