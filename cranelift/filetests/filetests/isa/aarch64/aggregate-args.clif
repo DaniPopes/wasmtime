@@ -44,10 +44,10 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64):
 ;   ret
 
 ;; A float aggregate that does not fit in the vector registers goes on the
-;; stack, and so do the later float arguments.
-function u0:2(f32, f32, f32, f32, f32, f32, f32, f32 aggregate(2, 4), f32, f32) -> f32 {
-block0(v0: f32, v1: f32, v2: f32, v3: f32, v4: f32, v5: f32, v6: f32, v7: f32, v8: f32, v9: f32):
-    return v9
+;; stack, packed like in memory, and so do the later float arguments.
+function u0:2(f32, f32, f32, f32, f32, f32, f32, f32 aggregate(3, 4), f32, f32, f32) -> f32 {
+block0(v0: f32, v1: f32, v2: f32, v3: f32, v4: f32, v5: f32, v6: f32, v7: f32, v8: f32, v9: f32, v10: f32):
+    return v10
 }
 
 ; VCode:

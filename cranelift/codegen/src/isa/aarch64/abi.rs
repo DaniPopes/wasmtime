@@ -437,7 +437,11 @@ impl ABIMachineSpec for AArch64MachineDeps {
             //
             // Otherwise every arg takes a minimum slot of 8 bytes. (16-byte
             // stack alignment happens separately after all args.)
-            let size = if (is_apple_cc || is_winch_return)
+            //
+            // The parts of an aggregate are laid out like the aggregate in memory, so they
+            // are packed on all platforms.
+            let in_stack_aggregate = i < aggregate_on_stack_until;
+            let size = if (is_apple_cc || is_winch_return || in_stack_aggregate)
                 && (args_or_rets == ArgsOrRets::Args
                     || param.extension == ir::ArgumentExtension::None)
             {
@@ -475,6 +479,11 @@ impl ABIMachineSpec for AArch64MachineDeps {
             });
 
             next_stack += size;
+
+            if in_stack_aggregate && i + 1 == aggregate_on_stack_until {
+                // The size of an aggregate on the stack is a multiple of 8.
+                next_stack = align_to(next_stack, 8);
+            }
         }
 
         let extra_arg = if let Some(ret_area_ptr) = ret_area_ptr {
