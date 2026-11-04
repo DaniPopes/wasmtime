@@ -124,7 +124,7 @@ impl ABIMachineSpec for Riscv64MachineDeps {
         };
 
         for param in params {
-            if let ir::ArgumentPurpose::StructArgument(_) = param.purpose {
+            if let ir::ArgumentPurpose::StructArgument(..) = param.purpose {
                 panic!(
                     "StructArgument parameters are not supported on riscv64. \
                     Use regular pointer arguments instead."

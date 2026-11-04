@@ -239,6 +239,9 @@ pub enum ArgumentPurpose {
     StructArgument(
         /// The size, in bytes, of the struct.
         u32,
+        /// The alignment, in bytes, of the struct: a power of two, at least 8 for the ABIs
+        /// that lay out structs in 8-byte slots.
+        u32,
     ),
 
     /// Struct return pointer.
@@ -262,7 +265,8 @@ impl fmt::Display for ArgumentPurpose {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
             Self::Normal => "normal",
-            Self::StructArgument(size) => return write!(f, "sarg({size})"),
+            Self::StructArgument(size, 8) => return write!(f, "sarg({size})"),
+            Self::StructArgument(size, align) => return write!(f, "sarg({size}, {align})"),
             Self::StructReturn => "sret",
             Self::VMContext => "vmctx",
         })
@@ -280,9 +284,12 @@ impl FromStr for ArgumentPurpose {
                 if !s.ends_with(")") {
                     return Err(());
                 }
-                // Parse 'sarg(size)'
-                let size: u32 = s["sarg(".len()..s.len() - 1].parse().map_err(|_| ())?;
-                Ok(Self::StructArgument(size))
+                // Parse 'sarg(size)' or 'sarg(size, align)'.
+                let args = &s["sarg(".len()..s.len() - 1];
+                let (size, align) = args.split_once(',').unwrap_or((args, "8"));
+                let size = size.trim().parse().map_err(|_| ())?;
+                let align = align.trim().parse().map_err(|_| ())?;
+                Ok(Self::StructArgument(size, align))
             }
             _ => Err(()),
         }
@@ -383,7 +390,8 @@ mod tests {
             (ArgumentPurpose::Normal, "normal"),
             (ArgumentPurpose::StructReturn, "sret"),
             (ArgumentPurpose::VMContext, "vmctx"),
-            (ArgumentPurpose::StructArgument(42), "sarg(42)"),
+            (ArgumentPurpose::StructArgument(42, 8), "sarg(42)"),
+            (ArgumentPurpose::StructArgument(48, 16), "sarg(48, 16)"),
         ];
         for &(e, n) in &all_purpose {
             assert_eq!(e.to_string(), n);

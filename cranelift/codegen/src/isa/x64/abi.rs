@@ -153,9 +153,13 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         for (ix, param) in params.iter().enumerate() {
             let last_param = ix == params.len() - 1;
 
-            if let ir::ArgumentPurpose::StructArgument(size) = param.purpose {
+            if let ir::ArgumentPurpose::StructArgument(size, align) = param.purpose {
+                assert!(
+                    align.is_power_of_two(),
+                    "StructArgument alignment is not a power of two"
+                );
+                next_stack = align_to(next_stack, align);
                 let offset = next_stack as i64;
-                let size = size;
                 assert!(size % 8 == 0, "StructArgument size is not properly aligned");
                 next_stack += size;
                 args.push(ABIArg::StructArg {

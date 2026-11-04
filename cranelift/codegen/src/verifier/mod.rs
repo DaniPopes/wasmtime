@@ -1982,7 +1982,7 @@ impl<'a> Verifier<'a> {
                 ));
             }
 
-            if let ArgumentPurpose::StructArgument(_) = param.purpose {
+            if let ArgumentPurpose::StructArgument(..) = param.purpose {
                 if is_return {
                     errors.report((
                         AnyEntity::Function,

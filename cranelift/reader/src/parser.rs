@@ -1439,8 +1439,14 @@ impl<'a> Parser<'a> {
                     self.consume();
                     self.match_token(Token::LPar, "expected '(' to begin sarg size")?;
                     let size = self.match_uimm32("expected byte-size in sarg decl")?;
+                    let align = if self.optional(Token::Comma) {
+                        self.match_uimm32("expected byte-alignment in sarg decl")?
+                            .into()
+                    } else {
+                        8
+                    };
                     self.match_token(Token::RPar, "expected ')' to end sarg size")?;
-                    arg.purpose = ArgumentPurpose::StructArgument(size.into());
+                    arg.purpose = ArgumentPurpose::StructArgument(size.into(), align);
                     continue;
                 }
                 _ => {

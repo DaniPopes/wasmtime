@@ -245,7 +245,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 );
             }
 
-            if let ir::ArgumentPurpose::StructArgument(_) = param.purpose {
+            if let ir::ArgumentPurpose::StructArgument(..) = param.purpose {
                 panic!(
                     "StructArgument parameters are not supported on arm64. \
                     Use regular pointer arguments instead."

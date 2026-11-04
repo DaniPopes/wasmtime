@@ -335,7 +335,7 @@ impl ABIMachineSpec for S390xMachineDeps {
         };
 
         for mut param in params.into_iter().copied() {
-            if let ir::ArgumentPurpose::StructArgument(_) = param.purpose {
+            if let ir::ArgumentPurpose::StructArgument(..) = param.purpose {
                 panic!(
                     "StructArgument parameters are not supported on s390x. \
                     Use regular pointer arguments instead."
