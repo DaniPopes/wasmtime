@@ -2000,6 +2000,32 @@ impl<'a> Verifier<'a> {
                 }
             }
 
+            if let ArgumentPurpose::AggregateStart(count, align) = param.purpose {
+                let params_left = if is_argument {
+                    self.func.signature.params.len() - i
+                } else {
+                    0
+                };
+                if count == 0 || count as usize > params_left {
+                    errors.report((
+                        AnyEntity::Function,
+                        format!(
+                            "{item} at position {i} starts an aggregate of {count} parameters, \
+                             but {params_left} are left"
+                        ),
+                    ))
+                }
+                if !align.is_power_of_two() {
+                    errors.report((
+                        AnyEntity::Function,
+                        format!(
+                            "{item} at position {i} has an aggregate alignment of {align}, \
+                             which is not a power of two"
+                        ),
+                    ))
+                }
+            }
+
             let ty_allows_extension = param.value_type.is_int();
             let has_extension = param.extension != ArgumentExtension::None;
             if !ty_allows_extension && has_extension {

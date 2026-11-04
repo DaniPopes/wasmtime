@@ -2674,3 +2674,22 @@ mod tests {
         assert_eq!(core::mem::size_of::<SigData>(), 24);
     }
 }
+
+/// Returns the number of integer registers and of float registers that the parameters of an
+/// aggregate argument need if they are passed in registers, see
+/// [`ArgumentPurpose::AggregateStart`].
+pub(crate) fn aggregate_register_counts<I: VCodeInst>(
+    params: &[ir::AbiParam],
+) -> CodegenResult<(usize, usize)> {
+    let (mut ints, mut floats) = (0, 0);
+    for param in params {
+        for class in I::rc_for_type(&param.value_type)?.0 {
+            match class {
+                RegClass::Int => ints += 1,
+                RegClass::Float => floats += 1,
+                RegClass::Vector => unreachable!(),
+            }
+        }
+    }
+    Ok((ints, floats))
+}

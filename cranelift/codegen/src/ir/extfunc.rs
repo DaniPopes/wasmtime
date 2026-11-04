@@ -243,6 +243,24 @@ pub enum ArgumentPurpose {
         u32,
     ),
 
+    /// The first parameter of an aggregate that an ABI passes as several parameters, for example
+    /// a C struct of two integers passed in two registers.
+    ///
+    /// The aggregate consists of this parameter and the following parameters, in total as many
+    /// as the first field says. It is passed either entirely in registers, or entirely on the
+    /// stack if its parts do not all fit in the registers that are left. Where an ABI also
+    /// exhausts the registers of a class when an aggregate goes on the stack, it does so, and
+    /// where an ABI starts a multi-register aggregate at an even register, it does so. The
+    /// aggregate is aligned to the second field on the stack.
+    ///
+    /// This only has an effect on arguments, and for some calling conventions.
+    AggregateStart(
+        /// The number of parameters of the aggregate.
+        u32,
+        /// The alignment, in bytes, of the aggregate.
+        u32,
+    ),
+
     /// Struct return pointer.
     ///
     /// When a function needs to return more data than will fit in registers, the caller passes a
@@ -266,6 +284,7 @@ impl fmt::Display for ArgumentPurpose {
             Self::Normal => "normal",
             Self::StructArgument(size, 8) => return write!(f, "sarg({size})"),
             Self::StructArgument(size, align) => return write!(f, "sarg({size}, {align})"),
+            Self::AggregateStart(count, align) => return write!(f, "aggregate({count}, {align})"),
             Self::StructReturn => "sret",
             Self::VMContext => "vmctx",
         })
@@ -279,6 +298,17 @@ impl FromStr for ArgumentPurpose {
             "normal" => Ok(Self::Normal),
             "sret" => Ok(Self::StructReturn),
             "vmctx" => Ok(Self::VMContext),
+            _ if s.starts_with("aggregate(") => {
+                if !s.ends_with(")") {
+                    return Err(());
+                }
+                // Parse 'aggregate(count, align)'.
+                let args = &s["aggregate(".len()..s.len() - 1];
+                let (count, align) = args.split_once(',').ok_or(())?;
+                let count = count.trim().parse().map_err(|_| ())?;
+                let align = align.trim().parse().map_err(|_| ())?;
+                Ok(Self::AggregateStart(count, align))
+            }
             _ if s.starts_with("sarg(") => {
                 if !s.ends_with(")") {
                     return Err(());
@@ -391,6 +421,7 @@ mod tests {
             (ArgumentPurpose::VMContext, "vmctx"),
             (ArgumentPurpose::StructArgument(42, 8), "sarg(42)"),
             (ArgumentPurpose::StructArgument(48, 16), "sarg(48, 16)"),
+            (ArgumentPurpose::AggregateStart(2, 16), "aggregate(2, 16)"),
         ];
         for &(e, n) in &all_purpose {
             assert_eq!(e.to_string(), n);

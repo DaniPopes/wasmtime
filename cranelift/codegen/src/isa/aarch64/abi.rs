@@ -227,7 +227,37 @@ impl ABIMachineSpec for AArch64MachineDeps {
             None
         };
 
+        // The parameters before this index belong to an aggregate that goes on the stack.
+        let mut aggregate_on_stack_until = 0;
+
         for (i, param) in params.into_iter().enumerate() {
+            if args_or_rets == ArgsOrRets::Args
+                && let ir::ArgumentPurpose::AggregateStart(count, align) = param.purpose
+            {
+                // An aggregate is passed either entirely in registers or entirely on the stack.
+                // A 16-byte aligned one starts at an even register. If it goes on the stack the
+                // next general-purpose or vector register number becomes 8, so that later
+                // arguments of that class go on the stack too (stage C of the AAPCS64).
+                let end = i + count as usize;
+                let (ints, floats) = aggregate_register_counts::<Inst>(&params[i..end])?;
+                if align >= 16 && ints > 0 && next_xreg % 2 != 0 {
+                    next_xreg += 1;
+                }
+                let fits = usize::from(next_xreg) + ints <= usize::from(max_per_class_reg_vals)
+                    && usize::from(next_vreg) + floats <= usize::from(max_per_class_reg_vals)
+                    && i32::try_from(ints + floats).is_ok_and(|n| n <= remaining_reg_vals);
+                if !fits {
+                    aggregate_on_stack_until = end;
+                    next_stack = align_to(next_stack, align.max(8));
+                    if ints > 0 {
+                        next_xreg = max_per_class_reg_vals;
+                    }
+                    if floats > 0 {
+                        next_vreg = max_per_class_reg_vals;
+                    }
+                }
+            }
+
             if is_apple_cc && param.value_type == types::F128 && !flags.enable_llvm_abi_extensions()
             {
                 panic!(
@@ -359,7 +389,9 @@ impl ABIMachineSpec for AArch64MachineDeps {
                     i == params.len() - 1
                 } else {
                     // Use max_per_class_reg_vals & remaining_reg_vals otherwise
-                    *next_reg < max_per_class_reg_vals && remaining_reg_vals > 0
+                    i >= aggregate_on_stack_until
+                        && *next_reg < max_per_class_reg_vals
+                        && remaining_reg_vals > 0
                 };
 
                 if push_to_reg {

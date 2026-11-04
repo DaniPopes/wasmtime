@@ -1,0 +1,11 @@
+test verifier
+
+function %too_long(i64 aggregate(3, 8), i64) system_v { ; error: starts an aggregate of 3 parameters, but 2 are left
+block0(v0: i64, v1: i64):
+    return
+}
+
+function %bad_align(i64 aggregate(1, 3)) system_v { ; error: has an aggregate alignment of 3
+block0(v0: i64):
+    return
+}

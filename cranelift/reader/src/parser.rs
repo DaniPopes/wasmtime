@@ -1449,6 +1449,16 @@ impl<'a> Parser<'a> {
                     arg.purpose = ArgumentPurpose::StructArgument(size.into(), align);
                     continue;
                 }
+                "aggregate" => {
+                    self.consume();
+                    self.match_token(Token::LPar, "expected '(' to begin aggregate count")?;
+                    let count = self.match_uimm32("expected parameter count in aggregate decl")?;
+                    self.match_token(Token::Comma, "expected ',' after aggregate count")?;
+                    let align = self.match_uimm32("expected byte-alignment in aggregate decl")?;
+                    self.match_token(Token::RPar, "expected ')' to end aggregate decl")?;
+                    arg.purpose = ArgumentPurpose::AggregateStart(count.into(), align.into());
+                    continue;
+                }
                 _ => {
                     if let Ok(purpose) = s.parse() {
                         arg.purpose = purpose;
