@@ -415,9 +415,6 @@ fn x86_64_colocated_symbol_address_uses_non_branch_relocation() {
     }
 }
 
-// ---------- `.eh_frame` emission tests ----------
-
-#[cfg(feature = "unwind")]
 #[test]
 fn macho_data_objects_share_custom_section() {
     use object::{Object as _, ObjectSection as _};
@@ -472,6 +469,9 @@ fn macho_data_objects_share_custom_section() {
     assert_eq!(other_sections[0].size(), 4);
 }
 
+// ---------- `.eh_frame` emission tests ----------
+
+#[cfg(feature = "unwind")]
 mod eh_frame {
     use super::*;
     use cranelift_codegen::settings::Configurable as _;
