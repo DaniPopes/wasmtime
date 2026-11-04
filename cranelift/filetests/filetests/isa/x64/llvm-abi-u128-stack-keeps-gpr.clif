@@ -1,0 +1,30 @@
+test compile precise-output
+set enable_llvm_abi_extensions=1
+target x86_64
+
+;; Only `r9` is left for the i128, which goes on the stack as a whole. As in
+;; the System V ABI, `r9` stays available to the next argument.
+function u0:0(i64, i64, i64, i64, i64, i128, i64) -> i64 system_v {
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i128, v6: i64):
+    return v6
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq %r9, %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq %r9, %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+

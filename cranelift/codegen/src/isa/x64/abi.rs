@@ -276,6 +276,7 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                             ty: ir::types::I64,
                             extension: ir::ArgumentExtension::None,
                         });
+                        next_gpr += 2;
                     }
                     _ => {
                         let size = 16;
@@ -296,10 +297,8 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                         next_stack += size;
                     }
                 };
-                // Unconditionally increment next_gpr even when storing the
-                // argument on the stack to prevent reusing a possibly
-                // remaining register for the next argument.
-                next_gpr += 2;
+                // A register left over when the argument goes on the stack
+                // stays available to later arguments.
                 next_param_idx += 2;
 
                 args.push(ABIArg::Slots {

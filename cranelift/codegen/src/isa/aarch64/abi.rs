@@ -336,6 +336,15 @@ impl ABIMachineSpec for AArch64MachineDeps {
                     remaining_reg_vals -= 2;
                     continue;
                 }
+
+                // A multi-register argument that goes on the stack uses up
+                // the remaining general-purpose registers (the AAPCS64 sets
+                // the next general-purpose register number to 8, and LLVM
+                // shadows `x7`), so later integer arguments go on the stack
+                // too.
+                if args_or_rets == ArgsOrRets::Args {
+                    next_xreg = max_per_class_reg_vals;
+                }
             } else {
                 // Single Register parameters
                 let rc = rcs[0];

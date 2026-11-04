@@ -1,0 +1,28 @@
+test compile precise-output
+set unwind_info=false
+target aarch64
+
+;; Only `x7` is left for the i128, which goes on the stack as a whole. As in
+;; the AAPCS64, this uses up `x7`, and the next argument goes on the stack too.
+function u0:0(i64, i64, i64, i64, i64, i64, i64, i128, i64) -> i64 {
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i128, v8: i64):
+    return v8
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   ldr x0, [sp, #32]
+;   ldp fp, lr, [sp], #16
+;   ret
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   ldur x0, [sp, #0x20]
+;   ldp x29, x30, [sp], #0x10
+;   ret
+
