@@ -10,6 +10,7 @@
 use crate::Variable;
 use alloc::{vec, vec::Vec};
 use core::mem;
+use cranelift_codegen::FxHashMap;
 use cranelift_codegen::cursor::{Cursor, FuncCursor};
 use cranelift_codegen::entity::{EntityList, EntitySet, ListPool, SecondaryMap};
 use cranelift_codegen::ir::immediates::{Ieee16, Ieee32, Ieee64, Ieee128};
@@ -32,10 +33,13 @@ use cranelift_codegen::packed_option::PackedOption;
 /// can be declared.
 #[derive(Default)]
 pub struct SSABuilder {
-    // TODO: Consider a sparse representation rather than SecondaryMap-of-SecondaryMap.
     /// Records for every variable and for every relevant block, the last definition of
     /// the variable in the block.
-    variables: SecondaryMap<Variable, SecondaryMap<Block, PackedOption<Value>>>,
+    ///
+    /// This is sparse because most variables are defined in, or looked up from, only a few
+    /// blocks, while a function can have both many variables and many blocks. The key packs the
+    /// variable and the block indices, see [`def_key`].
+    variables: FxHashMap<u64, Value>,
 
     /// Variables whose bindings must be tracked for stack maps.
     stack_map_vars: EntitySet<Variable>,
@@ -109,6 +113,11 @@ struct SSABlockData {
     sealed: Sealed,
     // If this block is sealed and it has exactly one predecessor, this is that predecessor.
     single_predecessor: PackedOption<Block>,
+}
+
+/// Packs a variable and a block into a single key for [`SSABuilder::variables`].
+fn def_key(var: Variable, block: Block) -> u64 {
+    (u64::from(var.as_u32()) << 32) | u64::from(block.as_u32())
 }
 
 impl SSABuilder {
@@ -215,14 +224,16 @@ impl SSABuilder {
     /// The SSA value is passed as an argument because it should be created with
     /// `ir::DataFlowGraph::append_result`.
     pub fn def_var(&mut self, var: Variable, val: Value, block: Block) {
-        self.variables[var][block] = PackedOption::from(val);
+        self.variables.insert(def_key(var, block), val);
         self.record_stack_map_binding(var, val);
     }
 
     /// Mark `var` as needing its bindings tracked for stack maps.
     pub fn mark_var_needs_stack_map(&mut self, var: Variable) {
         debug_assert!(
-            self.variables[var].values().all(|v| v.is_none()),
+            self.variables
+                .keys()
+                .all(|&key| key >> 32 != u64::from(var.as_u32())),
             "declare_var_needs_stack_map({var:?}) must be called before any \
              definition of the variable; otherwise earlier definitions are \
              silently omitted from stack maps"
@@ -280,7 +291,7 @@ impl SSABuilder {
     fn use_var_nonlocal(&mut self, func: &mut Function, var: Variable, ty: Type, mut block: Block) {
         // First, try Local Value Numbering (Algorithm 1 in the paper).
         // If the variable already has a known Value in this block, use that.
-        if let Some(val) = self.variables[var][block].expand() {
+        if let Some(&val) = self.variables.get(&def_key(var, block)) {
             self.results.push(val);
             return;
         }
@@ -309,10 +320,9 @@ impl SSABuilder {
         //
         // So in either case there is no definition in these blocks yet and we can blindly set one.
         debug_assert!(!self.stack_map_vars.contains(var) || self.stack_map_values.contains(val));
-        let var_defs = &mut self.variables[var];
         while block != from {
-            debug_assert!(var_defs[block].is_none());
-            var_defs[block] = PackedOption::from(val);
+            let prev = self.variables.insert(def_key(var, block), val);
+            debug_assert!(prev.is_none());
             block = self.ssa_blocks[block].single_predecessor.unwrap();
         }
     }
@@ -349,13 +359,12 @@ impl SSABuilder {
     ) -> (Value, Block) {
         // Try to find an existing definition along single-predecessor edges first.
         self.visited.clear();
-        let var_defs = &mut self.variables[var];
         while let Some(pred) = self.ssa_blocks[block].single_predecessor.expand() {
             if !self.visited.insert(block) {
                 break;
             }
             block = pred;
-            if let Some(val) = var_defs[block].expand() {
+            if let Some(&val) = self.variables.get(&def_key(var, block)) {
                 self.results.push(val);
                 return (val, block);
             }
@@ -364,7 +373,7 @@ impl SSABuilder {
         // We've promised to return the most recent block where `var` was defined, but we didn't
         // find a usable definition. So create one.
         let val = func.dfg.append_block_param(block, ty);
-        var_defs[block] = PackedOption::from(val);
+        self.variables.insert(def_key(var, block), val);
         self.record_stack_map_binding(var, val);
 
         // Now every predecessor needs to pass its definition of this variable to the newly added
