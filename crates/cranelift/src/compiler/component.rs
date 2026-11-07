@@ -2389,6 +2389,7 @@ mod host {
             params: params.iter().map(|ty| AbiParam::new(*ty)).collect(),
             returns: returns.iter().map(|ty| AbiParam::new(*ty)).collect(),
             call_conv: CallConv::triple_default(isa.triple()),
+            variadic: false,
         };
 
         // Once we're declaring the signature of a host function we must respect

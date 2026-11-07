@@ -33,6 +33,7 @@ fn error_on_incompatible_sig_in_declare_function() {
         params: vec![AbiParam::new(types::I64)],
         returns: vec![],
         call_conv: CallConv::SystemV,
+        variadic: false,
     };
     module
         .declare_function("abc", Linkage::Local, &sig)
@@ -49,6 +50,7 @@ fn define_simple_function(module: &mut JITModule) -> Result<FuncId, ModuleError>
         params: vec![],
         returns: vec![],
         call_conv: CallConv::SystemV,
+        variadic: false,
     };
 
     let func_id = module.declare_function("abc", Linkage::Local, &sig)?;
@@ -87,6 +89,7 @@ fn switch_error() {
         params: vec![AbiParam::new(types::I32)],
         returns: vec![AbiParam::new(types::I32)],
         call_conv: CallConv::SystemV,
+        variadic: false,
     };
 
     let mut func = Function::with_name_signature(UserFuncName::default(), sig);
@@ -167,6 +170,7 @@ fn libcall_function() {
         params: vec![],
         returns: vec![],
         call_conv: CallConv::SystemV,
+        variadic: false,
     };
 
     let func_id = module

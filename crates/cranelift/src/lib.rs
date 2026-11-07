@@ -433,6 +433,7 @@ impl BuiltinFunctionSignatures {
                             params: vec![ $( self.$param() ),* ],
                             returns: vec![ $( self.$result() )? ],
                             call_conv: self.wasm_call_conv,
+                            variadic: false,
                         };
                     }
                     _cur += 1;

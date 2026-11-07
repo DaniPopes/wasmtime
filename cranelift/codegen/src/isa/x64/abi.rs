@@ -995,6 +995,28 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         }
     }
 
+    fn gen_variadic_call_setup(
+        call_conv: isa::CallConv,
+        vector_regs_used: u8,
+        uses: &mut CallArgList,
+        insts: &mut SmallInstVec<Self::I>,
+        mut alloc_tmp: impl FnMut(Type) -> Writable<Reg>,
+    ) {
+        // System V passes an upper bound of the vector registers that carry arguments in `al`.
+        if call_conv == isa::CallConv::SystemV {
+            let count = alloc_tmp(types::I64);
+            insts.push(Inst::imm(
+                OperandSize::Size32,
+                vector_regs_used.into(),
+                count,
+            ));
+            uses.push(CallArgPair {
+                vreg: count.to_reg(),
+                preg: regs::rax(),
+            });
+        }
+    }
+
     fn retval_temp_reg(_call_conv_of_callee: isa::CallConv) -> Writable<Reg> {
         // Use r11 as a temp: clobbered anyway, and
         // not otherwise used as a return value in any of our
