@@ -95,6 +95,10 @@ where
         };
 
         for param in params {
+            if let ir::ArgumentPurpose::VariadicVectorRegs = param.purpose {
+                panic!("VariadicVectorRegs parameters are not supported on pulley.");
+            }
+
             // Find the regclass(es) of the register(s) used to store a value of
             // this type.
             let (rcs, reg_tys) = Self::I::rc_for_type(&param.value_type)?;

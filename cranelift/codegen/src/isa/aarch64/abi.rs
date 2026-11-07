@@ -298,6 +298,10 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 );
             }
 
+            if let ir::ArgumentPurpose::VariadicVectorRegs = param.purpose {
+                panic!("VariadicVectorRegs parameters are not supported on arm64.");
+            }
+
             if let ir::ArgumentPurpose::StructReturn = param.purpose {
                 // FIXME add assert_eq!(args_or_rets, ArgsOrRets::Args); once
                 // ensure_struct_return_ptr_is_returned is gone.

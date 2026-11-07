@@ -259,6 +259,13 @@ pub enum ArgumentPurpose {
         u32,
     ),
 
+    /// An upper bound of the vector registers that carry arguments, passed in `al` to a function
+    /// with C variadic arguments, which uses it to decide how many vector registers to save.
+    /// It takes the place of no argument of the function.
+    ///
+    /// This is only supported for arguments of the `system_v` calling convention on x86-64.
+    VariadicVectorRegs,
+
     /// Struct return pointer.
     ///
     /// When a function needs to return more data than will fit in registers, the caller passes a
@@ -283,6 +290,7 @@ impl fmt::Display for ArgumentPurpose {
             Self::StructArgument(size, 8) => return write!(f, "sarg({size})"),
             Self::StructArgument(size, align) => return write!(f, "sarg({size}, {align})"),
             Self::AggregateStart(count, align) => return write!(f, "aggregate({count}, {align})"),
+            Self::VariadicVectorRegs => "vector_regs",
             Self::StructReturn => "sret",
             Self::VMContext => "vmctx",
         })
@@ -296,6 +304,7 @@ impl FromStr for ArgumentPurpose {
             "normal" => Ok(Self::Normal),
             "sret" => Ok(Self::StructReturn),
             "vmctx" => Ok(Self::VMContext),
+            "vector_regs" => Ok(Self::VariadicVectorRegs),
             _ if s.starts_with("aggregate(") => {
                 if !s.ends_with(")") {
                     return Err(());
@@ -417,6 +426,7 @@ mod tests {
             (ArgumentPurpose::Normal, "normal"),
             (ArgumentPurpose::StructReturn, "sret"),
             (ArgumentPurpose::VMContext, "vmctx"),
+            (ArgumentPurpose::VariadicVectorRegs, "vector_regs"),
             (ArgumentPurpose::StructArgument(42, 8), "sarg(42)"),
             (ArgumentPurpose::StructArgument(48, 16), "sarg(48, 16)"),
             (ArgumentPurpose::AggregateStart(2, 16), "aggregate(2, 16)"),

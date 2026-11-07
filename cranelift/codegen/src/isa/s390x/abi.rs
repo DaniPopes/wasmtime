@@ -348,6 +348,10 @@ impl ABIMachineSpec for S390xMachineDeps {
                 );
             }
 
+            if let ir::ArgumentPurpose::VariadicVectorRegs = param.purpose {
+                panic!("VariadicVectorRegs parameters are not supported on s390x.");
+            }
+
             let intreg = in_int_reg(param.value_type);
             let fltreg = in_flt_reg(param.value_type);
             let vecreg = in_vec_reg(param.value_type);

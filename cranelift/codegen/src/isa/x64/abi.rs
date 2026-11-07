@@ -188,6 +188,20 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                 continue;
             }
 
+            if let ir::ArgumentPurpose::VariadicVectorRegs = param.purpose {
+                assert!(
+                    args_or_rets == ArgsOrRets::Args && call_conv == CallConv::SystemV,
+                    "VariadicVectorRegs is only supported for System V arguments"
+                );
+                args.push(ABIArg::reg(
+                    regs::rax().to_real_reg().unwrap(),
+                    param.value_type,
+                    ir::ArgumentExtension::None,
+                    param.purpose,
+                ));
+                continue;
+            }
+
             // Find regclass(es) of the register(s) used to store a value of this type.
             let (rcs, reg_tys) = Inst::rc_for_type(&param.value_type)?;
 

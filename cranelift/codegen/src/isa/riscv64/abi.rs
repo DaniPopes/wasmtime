@@ -137,6 +137,10 @@ impl ABIMachineSpec for Riscv64MachineDeps {
                 );
             }
 
+            if let ir::ArgumentPurpose::VariadicVectorRegs = param.purpose {
+                panic!("VariadicVectorRegs parameters are not supported on riscv64.");
+            }
+
             // Find regclass(es) of the register(s) used to store a value of this type.
             let (rcs, reg_tys) = Inst::rc_for_type(&param.value_type)?;
             let mut slots = ABIArgSlotVec::new();
