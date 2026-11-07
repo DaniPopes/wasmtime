@@ -718,3 +718,202 @@ mod eh_frame {
         );
     }
 }
+
+fn elf_module() -> ObjectModule {
+    elf_module_for("x86_64-unknown-linux-gnu")
+}
+
+fn elf_module_for(triple: &str) -> ObjectModule {
+    let isa = cranelift_codegen::isa::lookup_by_name(triple)
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let mut builder = ObjectBuilder::new(isa, "test", default_libcall_names()).unwrap();
+    builder.symbolless_anonymous_data(true);
+    ObjectModule::new(builder)
+}
+
+fn define_anonymous(module: &mut ObjectModule, contents: &[u8], mergeable_cstring: bool) -> DataId {
+    let data_id = module.declare_anonymous_data(false, false).unwrap();
+    let mut data_desc = DataDescription::new();
+    data_desc.define(contents.into());
+    data_desc.set_mergeable_cstring(mergeable_cstring);
+    module.define_data(data_id, &data_desc).unwrap();
+    data_id
+}
+
+fn define_address_of(module: &mut ObjectModule, name: &str, data_id: DataId) {
+    let sig = Signature {
+        params: vec![],
+        returns: vec![AbiParam::new(types::I64)],
+        call_conv: module.target_config().default_call_conv,
+    };
+    let func_id = module.declare_function(name, Linkage::Local, &sig).unwrap();
+    let mut ctx = Context::new();
+    ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+    let mut func_ctx = FunctionBuilderContext::new();
+    {
+        let mut bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let block = bcx.create_block();
+        bcx.switch_to_block(block);
+        let data = module.declare_data_in_func(data_id, &mut bcx.func);
+        let address = bcx
+            .ins()
+            .symbol_value(module.target_config().pointer_type(), data);
+        bcx.ins().return_(&[address]);
+        bcx.seal_all_blocks();
+        bcx.finalize(module.target_config());
+    }
+    module.define_function(func_id, &mut ctx).unwrap();
+}
+
+#[test]
+fn elf_anonymous_data_has_no_symbol() {
+    use object::{Object as _, ObjectSection as _, ObjectSymbol as _};
+
+    let mut module = elf_module();
+    define_anonymous(&mut module, &[1, 2, 3], false);
+    let second = define_anonymous(&mut module, &[4, 5, 6], false);
+    define_address_of(&mut module, "second_address", second);
+
+    let mut product = module.finish();
+    let (_, offset) = product.symbolless_data_location(second).unwrap();
+    assert_eq!(offset, 3);
+    let bytes = product.emit().expect("emit object file");
+    let file = object::File::parse(&*bytes).expect("parse emitted object");
+
+    assert!(
+        file.symbols()
+            .all(|symbol| !symbol.name().unwrap().starts_with(".Ldata")),
+        "anonymous data must not leave a symbol"
+    );
+
+    let rodata = file.section_by_name(".rodata").unwrap();
+    assert_eq!(rodata.data().unwrap(), [1, 2, 3, 4, 5, 6]);
+
+    let text = file.section_by_name(".text").unwrap();
+    let (_, relocation) = text.relocations().next().expect("address relocation");
+    let object::read::RelocationTarget::Symbol(target) = relocation.target() else {
+        panic!("expected a symbol target");
+    };
+    let target = file.symbol_by_index(target).unwrap();
+    assert_eq!(target.kind(), object::SymbolKind::Section);
+    assert_eq!(target.section_index(), Some(rodata.index()));
+    // The offset of the data in `.rodata` less the 4 bytes of the PC-relative relocation.
+    assert_eq!(relocation.addend(), 3 - 4);
+}
+
+#[test]
+fn elf_mergeable_cstrings_share_a_merge_section() {
+    use object::{Object as _, ObjectSection as _, ObjectSymbol as _};
+
+    let mut module = elf_module();
+    let hello = define_anonymous(&mut module, b"hello\0", true);
+    define_anonymous(&mut module, b"world\0", true);
+    define_anonymous(&mut module, &[1, 2, 3], false);
+    define_address_of(&mut module, "hello_address", hello);
+
+    let bytes = module.finish().emit().expect("emit object file");
+    let file = object::File::parse(&*bytes).expect("parse emitted object");
+
+    let strings = file.section_by_name(".rodata.str1.1").unwrap();
+    assert_eq!(strings.data().unwrap(), b"hello\0world\0");
+    let object::SectionFlags::Elf { sh_flags, .. } = strings.flags() else {
+        panic!("expected ELF section flags");
+    };
+    assert_eq!(
+        sh_flags,
+        object::elf::SHF_ALLOC | object::elf::SHF_MERGE | object::elf::SHF_STRINGS
+    );
+    let object::File::Elf64(elf) = &file else {
+        panic!("expected an ELF64 file");
+    };
+    let header = elf.elf_section_table().section(strings.index()).unwrap();
+    assert_eq!(header.sh_entsize.get(elf.endian()), 1);
+    assert_eq!(
+        file.section_by_name(".rodata").unwrap().data().unwrap(),
+        [1, 2, 3]
+    );
+
+    // The relocation to a merged string needs a symbol, as the linker finds the string by it.
+    let text = file.section_by_name(".text").unwrap();
+    let (_, relocation) = text.relocations().next().expect("address relocation");
+    let object::read::RelocationTarget::Symbol(target) = relocation.target() else {
+        panic!("expected a symbol target");
+    };
+    let target = file.symbol_by_index(target).unwrap();
+    assert!(target.name().unwrap().starts_with(".Ldata"));
+    assert_eq!(target.section_index(), Some(strings.index()));
+    assert_eq!(target.address(), 0);
+    assert_eq!(relocation.addend(), -4);
+}
+
+#[test]
+fn mergeable_cstring_must_be_one_string() {
+    let mut module = elf_module();
+    for contents in [&b"abc"[..], b"a\0b\0", b"", b"\0\0"] {
+        let data_id = module.declare_anonymous_data(false, false).unwrap();
+        let mut data_desc = DataDescription::new();
+        data_desc.define(contents.into());
+        data_desc.set_mergeable_cstring(true);
+        module.define_data(data_id, &data_desc).unwrap_err();
+    }
+}
+
+#[test]
+fn elf_aarch64_anonymous_data_relocations_use_section_symbol() {
+    use object::{Object as _, ObjectSection as _, ObjectSymbol as _};
+
+    let mut module = elf_module_for("aarch64-unknown-linux-gnu");
+    define_anonymous(&mut module, &[1, 2, 3], false);
+    let second = define_anonymous(&mut module, &[4, 5, 6], false);
+    define_address_of(&mut module, "second_address", second);
+
+    let bytes = module.finish().emit().expect("emit object file");
+    let file = object::File::parse(&*bytes).expect("parse emitted object");
+
+    assert!(
+        file.symbols()
+            .all(|symbol| !symbol.name().unwrap().starts_with(".Ldata")),
+        "anonymous data must not leave a symbol"
+    );
+
+    // The page and the offset in it of the address, both relative to the section.
+    let rodata = file.section_by_name(".rodata").unwrap();
+    let text = file.section_by_name(".text").unwrap();
+    let relocations = text
+        .relocations()
+        .filter(|(_, relocation)| {
+            let object::read::RelocationTarget::Symbol(target) = relocation.target() else {
+                return false;
+            };
+            file.symbol_by_index(target).unwrap().section_index() == Some(rodata.index())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(relocations.len(), 2);
+    for (_, relocation) in relocations {
+        assert_eq!(relocation.addend(), 3);
+    }
+}
+
+#[test]
+fn elf_anonymous_data_has_a_symbol_by_default() {
+    use object::{Object as _, ObjectSymbol as _};
+
+    let isa = cranelift_codegen::isa::lookup_by_name("x86_64-unknown-linux-gnu")
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let mut module =
+        ObjectModule::new(ObjectBuilder::new(isa, "test", default_libcall_names()).unwrap());
+    let data_id = define_anonymous(&mut module, &[1, 2, 3], false);
+
+    let product = module.finish();
+    product.data_symbol(data_id);
+    let bytes = product.emit().expect("emit object file");
+    let file = object::File::parse(&*bytes).expect("parse emitted object");
+    assert!(
+        file.symbols()
+            .any(|symbol| symbol.name().unwrap().starts_with(".Ldata"))
+    );
+}

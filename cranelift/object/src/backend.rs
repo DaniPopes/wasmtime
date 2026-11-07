@@ -20,6 +20,7 @@ use object::{
 };
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::ffi::CStr;
 use std::fmt::Write as _;
 use std::mem;
 use target_lexicon::{PointerWidth, Triple};
@@ -35,6 +36,7 @@ pub struct ObjectBuilder {
     libcall_names: Box<dyn Fn(ir::LibCall) -> String + Send + Sync>,
     per_function_section: bool,
     per_data_object_section: bool,
+    symbolless_anonymous_data: bool,
     #[cfg(feature = "unwind")]
     unwind_info: bool,
 }
@@ -124,6 +126,7 @@ impl ObjectBuilder {
             libcall_names,
             per_function_section: false,
             per_data_object_section: false,
+            symbolless_anonymous_data: false,
             #[cfg(feature = "unwind")]
             unwind_info: false,
         })
@@ -138,6 +141,20 @@ impl ObjectBuilder {
     /// Set if every data object should end up in their own section.
     pub fn per_data_object_section(&mut self, per_data_object_section: bool) -> &mut Self {
         self.per_data_object_section = per_data_object_section;
+        self
+    }
+
+    /// Set if anonymous data should get no symbol on ELF.
+    ///
+    /// Relocations to such data refer to its section and an offset instead, unless the kind of
+    /// relocation needs a symbol, such as a GOT entry, which then gets one on demand. Without
+    /// this, a local symbol per anonymous data object stays in the symbol table of the linked
+    /// binary.
+    ///
+    /// [`ObjectProduct::data_symbol`] panics for anonymous data without a symbol; use
+    /// [`ObjectProduct::symbolless_data_location`] for it.
+    pub fn symbolless_anonymous_data(&mut self, symbolless_anonymous_data: bool) -> &mut Self {
+        self.symbolless_anonymous_data = symbolless_anonymous_data;
         self
     }
 
@@ -240,6 +257,9 @@ pub struct ObjectModule {
     declarations: ModuleDeclarations,
     functions: SecondaryMap<FuncId, Option<(SymbolId, bool)>>,
     data_objects: SecondaryMap<DataId, Option<(SymbolId, bool)>>,
+    /// Where each defined data object without a symbol sits. See `declare_anonymous_data`.
+    symbolless_data: SecondaryMap<DataId, Option<SymbolessData>>,
+    elf_cstring_section: Option<SectionId>,
     relocs: Vec<SymbolRelocs>,
     libcalls: HashMap<ir::LibCall, SymbolId>,
     libcall_names: Box<dyn Fn(ir::LibCall) -> String + Send + Sync>,
@@ -247,6 +267,7 @@ pub struct ObjectModule {
     known_labels: HashMap<(FuncId, CodeOffset), SymbolId>,
     per_function_section: bool,
     per_data_object_section: bool,
+    symbolless_anonymous_data: bool,
     macho_custom_sections: HashMap<(Vec<u8>, Vec<u8>, SectionKind, u32), SectionId>,
     #[cfg(feature = "unwind")]
     unwind: Option<crate::unwind::UnwindBuilder>,
@@ -276,6 +297,8 @@ impl ObjectModule {
             declarations: ModuleDeclarations::default(),
             functions: SecondaryMap::new(),
             data_objects: SecondaryMap::new(),
+            symbolless_data: SecondaryMap::new(),
+            elf_cstring_section: None,
             relocs: Vec::new(),
             libcalls: HashMap::new(),
             libcall_names: builder.libcall_names,
@@ -283,6 +306,7 @@ impl ObjectModule {
             known_labels: HashMap::new(),
             per_function_section: builder.per_function_section,
             per_data_object_section: builder.per_data_object_section,
+            symbolless_anonymous_data: builder.symbolless_anonymous_data,
             macho_custom_sections: HashMap::new(),
             #[cfg(feature = "unwind")]
             unwind,
@@ -415,28 +439,13 @@ impl Module for ObjectModule {
     fn declare_anonymous_data(&mut self, writable: bool, tls: bool) -> ModuleResult<DataId> {
         let id = self.declarations.declare_anonymous_data(writable, tls)?;
 
-        let kind = if tls {
-            SymbolKind::Tls
-        } else {
-            SymbolKind::Data
-        };
+        // With this setting on ELF, anonymous data gets no symbol unless a relocation needs one:
+        // relocations refer to its section and offset instead.
+        if self.symbolless_anonymous_data && self.object.format() == BinaryFormat::Elf && !tls {
+            return Ok(id);
+        }
 
-        let symbol_id = self.object.add_symbol(Symbol {
-            name: self
-                .declarations
-                .get_data_decl(id)
-                .linkage_name(id)
-                .into_owned()
-                .into_bytes(),
-            value: 0,
-            size: 0,
-            kind,
-            scope: SymbolScope::Compilation,
-            weak: false,
-            section: SymbolSection::Undefined,
-            flags: SymbolFlags::None,
-        });
-        self.data_objects[id] = Some((symbol_id, false));
+        self.data_symbol(id);
 
         Ok(id)
     }
@@ -498,13 +507,15 @@ impl Module for ObjectModule {
             ));
         }
 
-        let &mut (symbol, ref mut defined) = self.data_objects[data_id].as_mut().unwrap();
-        if *defined {
+        let defined = match self.data_objects[data_id] {
+            Some((_, defined)) => defined,
+            None => self.symbolless_data[data_id].is_some(),
+        };
+        if defined {
             return Err(ModuleError::DuplicateDefinition(
                 decl.linkage_name(data_id).into_owned(),
             ));
         }
-        *defined = true;
 
         let &DataDescription {
             ref init,
@@ -515,6 +526,7 @@ impl Module for ObjectModule {
             ref custom_section,
             align,
             used,
+            mergeable_cstring,
         } = data;
 
         let pointer_reloc = match self.isa.triple().pointer_width().unwrap() {
@@ -527,7 +539,31 @@ impl Module for ObjectModule {
             .map(|record| self.process_reloc(&record))
             .collect::<Vec<_>>();
 
-        let section = if custom_section.is_none() {
+        if mergeable_cstring {
+            let is_cstring = matches!(init, Init::Bytes { contents }
+                if CStr::from_bytes_with_nul(contents).is_ok());
+            if !is_cstring || !relocs.is_empty() || decl.writable || decl.tls {
+                return Err(ModuleError::Backend(anyhow::anyhow!(
+                    "Mergeable C string data must be a read-only, relocation-free string with \
+                     one trailing NUL byte and no other"
+                )));
+            }
+        }
+        let cstring_section = if mergeable_cstring
+            && custom_section.is_none()
+            && !used
+            && !self.per_data_object_section
+            && align.unwrap_or(1) == 1
+            && self.isa.symbol_alignment() == 1
+        {
+            cstring_section(&mut self.object, &mut self.elf_cstring_section)
+        } else {
+            None
+        };
+
+        let section = if let Some(section) = cstring_section {
+            section
+        } else if custom_section.is_none() {
             let section_kind = if let Init::Zeros { .. } = *init {
                 if decl.tls {
                     StandardSection::UninitializedTls
@@ -614,18 +650,45 @@ impl Module for ObjectModule {
             }
         };
 
-        let align = std::cmp::max(align.unwrap_or(1), self.isa.symbol_alignment());
-        let offset = match *init {
-            Init::Uninitialized => {
+        let align = if cstring_section.is_some() {
+            1
+        } else {
+            std::cmp::max(align.unwrap_or(1), self.isa.symbol_alignment())
+        };
+        // The linker drops the local symbols of mergeable sections, so these keep theirs, as the
+        // relocations that refer to a merged string need the symbol to find it.
+        let symbol = if cstring_section.is_some() {
+            Some(self.data_symbol(data_id))
+        } else {
+            self.data_objects[data_id].map(|(symbol, _)| symbol)
+        };
+        let offset = match (init, symbol) {
+            (Init::Uninitialized, _) => {
                 panic!("data is not initialized yet");
             }
-            Init::Zeros { size } => self
+            (&Init::Zeros { size }, Some(symbol)) => {
+                self.object
+                    .add_symbol_bss(symbol, section, size as u64, align)
+            }
+            (&Init::Zeros { size }, None) => {
+                self.object.append_section_bss(section, size as u64, align)
+            }
+            (Init::Bytes { contents }, Some(symbol)) => self
                 .object
-                .add_symbol_bss(symbol, section, size as u64, align),
-            Init::Bytes { ref contents } => self
-                .object
-                .add_symbol_data(symbol, section, &contents, align),
+                .add_symbol_data(symbol, section, contents, align),
+            (Init::Bytes { contents }, None) => {
+                self.object.append_section_data(section, contents, align)
+            }
         };
+        if let Some((_, defined)) = &mut self.data_objects[data_id] {
+            *defined = true;
+        } else {
+            self.symbolless_data[data_id] = Some(SymbolessData {
+                section,
+                offset,
+                size: init.size() as u64,
+            });
+        }
         if !relocs.is_empty() {
             self.relocs.push(SymbolRelocs {
                 section,
@@ -641,10 +704,12 @@ impl Module for ObjectModule {
                     _ => unreachable!(),
                 },
                 object::BinaryFormat::Coff => {}
-                object::BinaryFormat::MachO => match self.object.symbol_flags_mut(symbol) {
-                    SymbolFlags::MachO { n_desc, .. } => *n_desc |= macho::N_NO_DEAD_STRIP,
-                    _ => unreachable!(),
-                },
+                object::BinaryFormat::MachO => {
+                    match self.object.symbol_flags_mut(symbol.unwrap()) {
+                        SymbolFlags::MachO { n_desc, .. } => *n_desc |= macho::N_NO_DEAD_STRIP,
+                        _ => unreachable!(),
+                    }
+                }
                 _ => unreachable!(),
             }
         }
@@ -718,7 +783,10 @@ impl ObjectModule {
                 }
 
                 assert!(
-                    self.data_objects[data_id].unwrap().1,
+                    self.data_objects[data_id].map_or_else(
+                        || self.symbolless_data[data_id].is_some(),
+                        |(_, defined)| defined
+                    ),
                     "data object \"{}\" with linkage {:?} must be defined but is not",
                     decl.linkage_name(data_id),
                     decl.linkage,
@@ -735,7 +803,7 @@ impl ObjectModule {
                 addend,
             } in &symbol.relocs
             {
-                let target_symbol = self.get_symbol(name);
+                let (target_symbol, addend) = self.reloc_target(name, flags, addend);
                 self.object
                     .add_relocation(
                         symbol.section,
@@ -770,7 +838,61 @@ impl ObjectModule {
             object: self.object,
             functions: self.functions,
             data_objects: self.data_objects,
+            symbolless_data: self.symbolless_data,
         }
+    }
+
+    /// Return the symbol and addend a relocation to `name` uses.
+    ///
+    /// A relocation to data without a symbol refers to its section and offset instead, when the
+    /// relocation kind adds the addend to the target address. A GOT entry or a TLS relocation
+    /// stands for the symbol itself, so it gets a symbol.
+    ///
+    /// This should only be called during finish.
+    fn reloc_target(
+        &mut self,
+        name: &ModuleRelocTarget,
+        flags: RelocationFlags,
+        addend: Addend,
+    ) -> (SymbolId, Addend) {
+        if let ModuleRelocTarget::User { .. } = name
+            && !ModuleDeclarations::is_function(name)
+            && let id = DataId::from_name(name)
+            && self.data_objects[id].is_none()
+            && let Some(data) = self.symbolless_data[id]
+            && reloc_adds_addend_to_address(flags)
+        {
+            let section_symbol = self.object.section_symbol(data.section);
+            return (section_symbol, addend + data.offset as Addend);
+        }
+        (self.get_symbol(name), addend)
+    }
+
+    /// Return the symbol of a data object, creating it for anonymous data on ELF.
+    fn data_symbol(&mut self, id: DataId) -> SymbolId {
+        if let Some((symbol, _)) = self.data_objects[id] {
+            return symbol;
+        }
+        let decl = self.declarations.get_data_decl(id);
+        let data = self.symbolless_data[id];
+        let symbol = self.object.add_symbol(Symbol {
+            name: decl.linkage_name(id).into_owned().into_bytes(),
+            value: data.map_or(0, |data| data.offset),
+            size: data.map_or(0, |data| data.size),
+            kind: if decl.tls {
+                SymbolKind::Tls
+            } else {
+                SymbolKind::Data
+            },
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: data.map_or(SymbolSection::Undefined, |data| {
+                SymbolSection::Section(data.section)
+            }),
+            flags: SymbolFlags::None,
+        });
+        self.data_objects[id] = Some((symbol, data.is_some()));
+        symbol
     }
 
     /// This should only be called during finish because it creates
@@ -782,8 +904,7 @@ impl ObjectModule {
                     let id = FuncId::from_name(name);
                     self.functions[id].unwrap().0
                 } else {
-                    let id = DataId::from_name(name);
-                    self.data_objects[id].unwrap().0
+                    self.data_symbol(DataId::from_name(name))
                 }
             }
             ModuleRelocTarget::LibCall(ref libcall) => {
@@ -1158,6 +1279,7 @@ pub struct ObjectProduct {
     pub functions: SecondaryMap<FuncId, Option<(SymbolId, bool)>>,
     /// Symbol IDs for data objects (both declared and defined).
     pub data_objects: SecondaryMap<DataId, Option<(SymbolId, bool)>>,
+    symbolless_data: SecondaryMap<DataId, Option<SymbolessData>>,
 }
 
 impl ObjectProduct {
@@ -1168,15 +1290,76 @@ impl ObjectProduct {
     }
 
     /// Return the `SymbolId` for the given data object.
+    ///
+    /// Panics for anonymous data without a symbol, which needs
+    /// [`ObjectBuilder::symbolless_anonymous_data`]. See
+    /// [`ObjectProduct::symbolless_data_location`].
     #[inline]
     pub fn data_symbol(&self, id: DataId) -> SymbolId {
         self.data_objects[id].unwrap().0
+    }
+
+    /// Return the symbol of the section and the offset in it of a defined data object that has
+    /// no symbol, which is anonymous data on ELF with [`ObjectBuilder::symbolless_anonymous_data`]
+    /// unless a relocation needed its symbol.
+    ///
+    /// Returns `None` for data that has a symbol.
+    pub fn symbolless_data_location(&mut self, id: DataId) -> Option<(SymbolId, u64)> {
+        if self.data_objects[id].is_some() {
+            return None;
+        }
+        let data = self.symbolless_data[id]?;
+        Some((self.object.section_symbol(data.section), data.offset))
     }
 
     /// Write the object bytes in memory.
     #[inline]
     pub fn emit(self) -> Result<Vec<u8>, object::write::Error> {
         self.object.write()
+    }
+}
+
+/// The section for mergeable C strings, if the target has one.
+fn cstring_section(
+    object: &mut Object<'_>,
+    elf_section: &mut Option<SectionId>,
+) -> Option<SectionId> {
+    match object.format() {
+        BinaryFormat::Elf => Some(*elf_section.get_or_insert_with(|| {
+            object.add_section(
+                vec![],
+                b".rodata.str1.1".to_vec(),
+                SectionKind::ReadOnlyString,
+            )
+        })),
+        BinaryFormat::MachO => Some(object.section_id(StandardSection::ReadOnlyString)),
+        _ => None,
+    }
+}
+
+/// Where a defined data object without a symbol sits.
+#[derive(Clone, Copy)]
+struct SymbolessData {
+    section: SectionId,
+    offset: u64,
+    size: u64,
+}
+
+/// Whether a relocation adds its addend to the address of its target, so that the offset of a
+/// data object in its section can join the addend when the relocation refers to the section.
+fn reloc_adds_addend_to_address(flags: RelocationFlags) -> bool {
+    match flags {
+        RelocationFlags::Generic {
+            kind: RelocationKind::Absolute | RelocationKind::Relative,
+            ..
+        } => true,
+        RelocationFlags::Elf { r_type } => matches!(
+            r_type,
+            elf::R_AARCH64_ADR_PREL_PG_HI21
+                | elf::R_AARCH64_ADD_ABS_LO12_NC
+                | elf::R_RISCV_PCREL_HI20
+        ),
+        _ => false,
     }
 }
 
