@@ -86,3 +86,37 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v
 ;   add sp, sp, #0x10
 ;   b #0x14 ; reloc_external Call %callee 0
 
+
+;; A struct argument is always on the stack, aligned to its alignment.
+function %byval(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64 sarg(16, 16), i64) -> i64 tailcc {
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i64, v9: i64, v10: i64):
+    v11 = load.i64 notrap v9
+    v12 = iadd v11, v10
+    return v12
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   add x0, sp, #32
+;   ldr x2, [sp, #48]
+;   ldr x5, [x0]
+;   add x0, x5, x2
+;   ldp fp, lr, [sp], #16
+;   add sp, sp, #48
+;   ret
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   add x0, sp, #0x20
+;   ldur x2, [sp, #0x30]
+;   ldr x5, [x0]
+;   add x0, x5, x2
+;   ldp x29, x30, [sp], #0x10
+;   add sp, sp, #0x30
+;   ret
+

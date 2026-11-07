@@ -291,11 +291,26 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 );
             }
 
-            if let ir::ArgumentPurpose::StructArgument(..) = param.purpose {
-                panic!(
-                    "StructArgument parameters are not supported on arm64. \
-                    Use regular pointer arguments instead."
+            if let ir::ArgumentPurpose::StructArgument(size, align) = param.purpose {
+                assert_eq!(
+                    args_or_rets,
+                    ArgsOrRets::Args,
+                    "StructArgument is not a return value"
                 );
+                assert!(
+                    align.is_power_of_two(),
+                    "StructArgument alignment is not a power of two"
+                );
+                assert!(size % 8 == 0, "StructArgument size is not properly aligned");
+                // The argument is always on the stack, aligned to at least its own alignment.
+                next_stack = align_to(next_stack, align);
+                args.push(ABIArg::StructArg {
+                    offset: i64::from(next_stack),
+                    size: u64::from(size),
+                    purpose: param.purpose,
+                });
+                next_stack += size;
+                continue;
             }
 
             if let ir::ArgumentPurpose::VariadicVectorRegs = param.purpose {
