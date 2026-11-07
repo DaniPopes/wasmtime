@@ -300,9 +300,9 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     ) -> BoxCallInfo {
         let stack_ret_space = self.lower_ctx.sigs()[sig].sized_stack_ret_space();
         let stack_arg_space = self.lower_ctx.sigs()[sig].sized_stack_arg_space();
-        self.lower_ctx
-            .abi_mut()
-            .accumulate_outgoing_args_size(stack_ret_space + stack_arg_space);
+        self.lower_ctx.abi_mut().accumulate_outgoing_args_size(
+            (stack_ret_space + stack_arg_space).next_multiple_of(16),
+        );
 
         Box::new(
             self.lower_ctx
@@ -320,9 +320,9 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     ) -> BoxCallIndInfo {
         let stack_ret_space = self.lower_ctx.sigs()[sig].sized_stack_ret_space();
         let stack_arg_space = self.lower_ctx.sigs()[sig].sized_stack_arg_space();
-        self.lower_ctx
-            .abi_mut()
-            .accumulate_outgoing_args_size(stack_ret_space + stack_arg_space);
+        self.lower_ctx.abi_mut().accumulate_outgoing_args_size(
+            (stack_ret_space + stack_arg_space).next_multiple_of(16),
+        );
 
         Box::new(
             self.lower_ctx
