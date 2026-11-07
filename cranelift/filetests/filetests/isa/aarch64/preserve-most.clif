@@ -120,24 +120,3 @@ block0(v0: i64, v1: i64):
 ;   ldp x29, x30, [sp], #0x10
 ;   ret
 
-;; A tail call jumps to a register that the callee-save restore code does not touch.
-function %tail_indirect(i64, i64) -> i64 preserve_most {
-    sig0 = (i64) -> i64 preserve_most
-block0(v0: i64, v1: i64):
-    return_call_indirect sig0, v1(v0)
-}
-
-; VCode:
-;   stp fp, lr, [sp, #-16]!
-;   mov fp, sp
-; block0:
-;   return_call_ind x1 new_stack_arg_size:0 x0=x0
-;
-; Disassembled:
-; block0: ; offset 0x0
-;   stp x29, x30, [sp, #-0x10]!
-;   mov x29, sp
-; block1: ; offset 0x8
-;   ldp x29, x30, [sp], #0x10
-;   br x1
-

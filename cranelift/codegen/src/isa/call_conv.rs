@@ -84,7 +84,9 @@ pub enum CallConv {
     /// - aarch64: x9 to x15 in addition to the registers the C convention preserves
     ///
     /// Vector registers are preserved as in the C convention. It is supported on x86-64 and
-    /// aarch64, and the other targets use the C convention.
+    /// aarch64, and the other targets use the C convention. It does not support tail calls, as
+    /// the registers it preserves include argument registers that the callee-save restore code
+    /// would overwrite before the jump.
     PreserveMost,
     /// Calling convention matching LLVM's `tailcc`, for interoperating with code that LLVM
     /// compiled.
@@ -171,7 +173,6 @@ impl CallConv {
             CallConv::Tail
             | CallConv::Tailcc
             | CallConv::PreserveNone
-            | CallConv::PreserveMost
             | CallConv::SystemV
             | CallConv::AppleAarch64
             | CallConv::WindowsFastcall => true,

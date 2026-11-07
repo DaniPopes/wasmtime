@@ -54,3 +54,9 @@ function %test_8(i32) -> i32 tail {
     block0(v0: i32):
         return_call fn0() ; error: mismatched argument count for `return_call fn0()`: got 0, expected 1
 }
+
+function %test_9(i32) -> i32 preserve_most {
+    fn0 = %wow(i32) -> i32 preserve_most
+    block0(v0: i32):
+        return_call fn0(v0) ; error: calling convention `preserve_most` does not support tail calls
+}

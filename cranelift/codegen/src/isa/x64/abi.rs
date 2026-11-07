@@ -943,7 +943,8 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         preserve_most: bool,
         is_exception: bool,
     ) -> PRegSet {
-        if preserve_most {
+        // The unwinder only restores the registers that the native convention preserves.
+        if preserve_most && !is_exception {
             return match call_conv_of_callee {
                 isa::CallConv::WindowsFastcall => WINDOWS_PRESERVE_MOST_CLOBBERS,
                 _ => SYSV_PRESERVE_MOST_CLOBBERS,

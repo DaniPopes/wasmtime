@@ -241,40 +241,6 @@ block0(v0: i64, v1: i64):
 ;   retq
 
 
-;; A tail call jumps to a register that the callee-save restore code does not touch.
-function %tail_indirect(i64, i64) -> i64 preserve_most {
-    sig0 = (i64) -> i64 preserve_most
-block0(v0: i64, v1: i64):
-    return_call_indirect sig0, v1(v0)
-}
-
-; VCode:
-;   pushq %rbp
-;   movq %rsp, %rbp
-;   subq $0x10, %rsp
-;   movq %rsi, (%rsp)
-;   movq %rdi, 8(%rsp)
-; block0:
-;   movq %rsi, %r11
-;   return_call_unknown %r11 (0) tmp=%r11 %rdi=%rdi
-;
-; Disassembled:
-; block0: ; offset 0x0
-;   pushq %rbp
-;   movq %rsp, %rbp
-;   subq $0x10, %rsp
-;   movq %rsi, (%rsp)
-;   movq %rdi, 8(%rsp)
-; block1: ; offset 0x11
-;   movq %rsi, %r11
-;   movq (%rsp), %rsi
-;   movq 8(%rsp), %rdi
-;   addq $0x10, %rsp
-;   movq %rbp, %rsp
-;   popq %rbp
-;   jmpq *%r11
-
-;; The convention is based on the native one, which on Windows clobbers fewer vector registers.
 function %windows(i64, i64, i64, i64, i64) -> i64 windows_fastcall {
     sig0 = (i64) preserve_most
     fn0 = %callee sig0

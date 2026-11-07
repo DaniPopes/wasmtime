@@ -53,9 +53,6 @@ pub struct ReturnCallInfo<T> {
 
     /// A temporary for use when moving the return address.
     pub tmp: WritableGpr,
-
-    /// Whether the caller has the `preserve_most` calling convention, which preserves `r10`.
-    pub preserve_most: bool,
 }
 
 #[test]
@@ -1070,27 +1067,15 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
 
         Inst::ReturnCallUnknown { info } => {
             let ReturnCallInfo {
-                dest,
-                uses,
-                tmp,
-                preserve_most,
-                ..
+                dest, uses, tmp, ..
             } = &mut **info;
 
             // TODO(https://github.com/bytecodealliance/regalloc2/issues/145):
             // This shouldn't be a fixed register constraint, but it's not clear how to
             // pick a register that won't be clobbered by the callee-save restore code
             // emitted with a return_call_indirect. r10 is caller-saved, so this should be
-            // safe to use, except in the `preserve_most` calling convention, which preserves
-            // it and where only `r11` is caller-saved.
-            collector.reg_fixed_use(
-                dest,
-                if *preserve_most {
-                    regs::r11()
-                } else {
-                    regs::r10()
-                },
-            );
+            // safe to use.
+            collector.reg_fixed_use(dest, regs::r10());
 
             collector.reg_fixed_def(tmp, regs::r11());
             for CallArgPair { vreg, preg } in uses {

@@ -1328,7 +1328,8 @@ impl ABIMachineSpec for AArch64MachineDeps {
         preserve_most: bool,
         is_exception: bool,
     ) -> PRegSet {
-        if preserve_most {
+        // The unwinder only restores the registers that the native convention preserves.
+        if preserve_most && !is_exception {
             return PRESERVE_MOST_CLOBBERS;
         }
         match (call_conv, is_exception) {

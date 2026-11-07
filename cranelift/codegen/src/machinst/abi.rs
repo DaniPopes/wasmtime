@@ -1648,12 +1648,6 @@ impl<M: ABIMachineSpec> Callee<M> {
         self.call_conv
     }
 
-    /// Whether this ABI object implements the `preserve_most` calling convention, which
-    /// `call_conv` is then the native convention of.
-    pub fn preserve_most(&self) -> bool {
-        self.preserve_most
-    }
-
     /// The size of the stack arguments of a tail call to `callee`, as laid out in this function's
     /// incoming argument area.
     ///
