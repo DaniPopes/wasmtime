@@ -1566,7 +1566,7 @@ impl<M: ABIMachineSpec> Callee<M> {
     /// arguments have to fit in it.
     pub fn tail_call_stack_arg_size(&self, sigs: &SigSet, callee: Sig) -> u32 {
         let callee_size = sigs[callee].sized_stack_arg_space;
-        if self.call_conv == isa::CallConv::PreserveNone {
+        if !self.call_conv.callee_pops_stack_args() {
             let own_size = self.stack_args_size(sigs);
             assert!(
                 callee_size <= own_size,
@@ -2194,7 +2194,7 @@ impl<M: ABIMachineSpec> Callee<M> {
         // after the register allocator has run and thus cannot have register allocator-inserted
         // references to SP offsets.)
 
-        let callee_pop_size = if matches!(callee_conv, isa::CallConv::Tail | isa::CallConv::Winch) {
+        let callee_pop_size = if callee_conv.callee_pops_stack_args() {
             // The tail and Winch calling conventions have callees pop stack
             // arguments.
             stack_arg_space

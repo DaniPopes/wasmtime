@@ -1,0 +1,106 @@
+test compile precise-output
+set preserve_frame_pointers=true
+target x86_64
+
+;; A tail call in a convention where the caller pops the stack arguments writes the arguments of
+;; the callee over the ones of the caller and does not pop them.
+function %system_v(i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v {
+    sig0 = (i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v
+    fn0 = colocated %system_v sig0
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64):
+    return_call fn0(v0, v1, v2, v3, v4, v5, v7, v6)
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq <offset:0>+-0x10(%rbp), %r10
+;   movq <offset:0>+-8(%rbp), %r11
+;   movq %r11, <offset:0>+-0x10(%rbp)
+;   movq %r10, <offset:0>+-8(%rbp)
+;   return_call_known TestCase(%system_v) (16) tmp=%r11 %rdi=%rdi %rsi=%rsi %rdx=%rdx %rcx=%rcx %r8=%r8 %r9=%r9
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq 0x10(%rbp), %r10
+;   movq 0x18(%rbp), %r11
+;   movq %r11, 0x10(%rbp)
+;   movq %r10, 0x18(%rbp)
+;   movq %rbp, %rsp
+;   popq %rbp
+;   jmp 0x1d ; reloc_external CallPCRel4 %system_v -4
+
+function %system_v_indirect(i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v {
+    sig0 = (i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64):
+    return_call_indirect sig0, v0(v0, v1, v2, v3, v4, v5, v6, v7)
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq <offset:0>+-0x10(%rbp), %r11
+;   movq <offset:0>+-8(%rbp), %r10
+;   movq %r11, <offset:0>+-0x10(%rbp)
+;   movq %r10, <offset:0>+-8(%rbp)
+;   movq %rdi, %r10
+;   return_call_unknown %r10 (16) tmp=%r11 %rdi=%rdi %rsi=%rsi %rdx=%rdx %rcx=%rcx %r8=%r8 %r9=%r9
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq 0x10(%rbp), %r11
+;   movq 0x18(%rbp), %r10
+;   movq %r11, 0x10(%rbp)
+;   movq %r10, 0x18(%rbp)
+;   movq %rdi, %r10
+;   movq %rbp, %rsp
+;   popq %rbp
+;   jmpq *%r10
+
+function %windows_fastcall(i64, i64, i64, i64, i64, i64) -> i64 windows_fastcall {
+    sig0 = (i64, i64, i64, i64, i64, i64) -> i64 windows_fastcall
+    fn0 = colocated %windows_fastcall sig0
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64):
+    return_call fn0(v0, v1, v2, v3, v5, v4)
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+;   subq $0x10, %rsp
+;   movq %rsi, (%rsp)
+;   movq %rdi, 8(%rsp)
+; block0:
+;   movq <offset:0>+-0x10(%rbp), %rsi
+;   movq <offset:0>+-8(%rbp), %rdi
+;   movq %rdi, <offset:0>+-0x10(%rbp)
+;   movq %rsi, <offset:0>+-8(%rbp)
+;   return_call_known TestCase(%windows_fastcall) (48) tmp=%r11 %rcx=%rcx %rdx=%rdx %r8=%r8 %r9=%r9
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+;   subq $0x10, %rsp
+;   movq %rsi, (%rsp)
+;   movq %rdi, 8(%rsp)
+; block1: ; offset 0x11
+;   movq 0x30(%rbp), %rsi
+;   movq 0x38(%rbp), %rdi
+;   movq %rdi, 0x30(%rbp)
+;   movq %rsi, 0x38(%rbp)
+;   movq (%rsp), %rsi
+;   movq 8(%rsp), %rdi
+;   addq $0x10, %rsp
+;   movq %rbp, %rsp
+;   popq %rbp
+;   jmp 0x37 ; reloc_external CallPCRel4 %windows_fastcall -4
+

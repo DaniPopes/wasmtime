@@ -1,0 +1,42 @@
+test run
+
+set preserve_frame_pointers=true
+
+target x86_64
+target aarch64
+
+;; A million tail calls that pass arguments in registers and on the stack take no stack space, and
+;; the caller pops the stack arguments.
+function %loop(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v {
+    sig0 = (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v
+    fn0 = colocated %loop sig0
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i64, v9: i64, v10: i64, v11: i64, v12: i64, v13: i64, v14: i64, v15: i64, v16: i64, v17: i64, v18: i64, v19: i64, v20: i64, v21: i64, v22: i64, v23: i64, v24: i64, v25: i64, v26: i64):
+    brif v0, block1, block2
+
+block1:
+    v33 = iconst.i64 -1
+    v27 = iadd v0, v33
+    v28 = iadd v1, v26
+    v34 = iconst.i64 1
+    v29 = iadd v26, v34
+    v35 = iconst.i64 2
+    v30 = iadd v25, v35
+    return_call fn0(v27, v28, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v30, v29)
+
+block2:
+    v31 = iadd v1, v25
+    v32 = iadd v31, v24
+    return v32
+}
+
+function %main() -> i64 {
+    sig0 = (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v
+    fn0 = colocated %loop sig0
+block0:
+    v0 = iconst.i64 1000000
+    v1 = iconst.i64 0
+    v2 = iconst.i64 7
+    v3 = call fn0(v0, v1, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v2, v1, v1, v1)
+    return v3
+}
+; run: %main() == 500001500000

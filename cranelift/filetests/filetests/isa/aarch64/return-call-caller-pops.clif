@@ -1,0 +1,99 @@
+test compile precise-output
+set preserve_frame_pointers=true
+set unwind_info=false
+target aarch64
+
+;; A tail call in a convention where the caller pops the stack arguments writes the arguments of
+;; the callee over the ones of the caller and does not pop them.
+function %system_v(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v {
+    sig0 = (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v
+    fn0 = colocated %system_v sig0
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i64, v9: i64):
+    return_call fn0(v0, v1, v2, v3, v4, v5, v6, v7, v9, v8)
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   ldr x9, [sp, #16]
+;   ldr x11, [sp, #24]
+;   str x11, [sp, #16]
+;   str x9, [sp, #24]
+;   return_call TestCase(%system_v) new_stack_arg_size:16 x0=x0 x1=x1 x2=x2 x3=x3 x4=x4 x5=x5 x6=x6 x7=x7
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   ldur x9, [sp, #0x10]
+;   ldur x11, [sp, #0x18]
+;   stur x11, [sp, #0x10]
+;   stur x9, [sp, #0x18]
+;   ldp x29, x30, [sp], #0x10
+;   b #0x1c ; reloc_external Call %system_v 0
+
+function %system_v_indirect(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v {
+    sig0 = (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 system_v
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i64, v9: i64):
+    return_call_indirect sig0, v0(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9)
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   ldr x9, [sp, #16]
+;   ldr x11, [sp, #24]
+;   str x9, [sp, #16]
+;   str x11, [sp, #24]
+;   mov x8, x0
+;   return_call_ind x8 new_stack_arg_size:16 x0=x0 x1=x1 x2=x2 x3=x3 x4=x4 x5=x5 x6=x6 x7=x7
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   ldur x9, [sp, #0x10]
+;   ldur x11, [sp, #0x18]
+;   stur x9, [sp, #0x10]
+;   stur x11, [sp, #0x18]
+;   mov x8, x0
+;   ldp x29, x30, [sp], #0x10
+;   br x8
+
+function %apple_aarch64(i64, i64, i64, i64, i64, i64, i64, i64, i32, i64, i8) -> i64 apple_aarch64 {
+    sig0 = (i64, i64, i64, i64, i64, i64, i64, i64, i32, i64, i8) -> i64 apple_aarch64
+    fn0 = colocated %apple_aarch64 sig0
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i32, v9: i64, v10: i8):
+    return_call fn0(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   ldr w9, [sp, #16]
+;   ldr x11, [sp, #24]
+;   ldrb w13, [sp, #32]
+;   str w9, [sp, #16]
+;   str x11, [sp, #24]
+;   strb w13, [sp, #32]
+;   return_call TestCase(%apple_aarch64) new_stack_arg_size:32 x0=x0 x1=x1 x2=x2 x3=x3 x4=x4 x5=x5 x6=x6 x7=x7
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   ldur w9, [sp, #0x10]
+;   ldur x11, [sp, #0x18]
+;   ldurb w13, [sp, #0x20]
+;   stur w9, [sp, #0x10]
+;   stur x11, [sp, #0x18]
+;   sturb w13, [sp, #0x20]
+;   ldp x29, x30, [sp], #0x10
+;   b #0x24 ; reloc_external Call %apple_aarch64 0
+

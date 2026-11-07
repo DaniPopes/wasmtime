@@ -1729,6 +1729,20 @@ impl<'a> Verifier<'a> {
                 "callee's calling convention must match caller",
             ));
         }
+        if let Some(isa) = self.isa
+            && cc.supports_tail_calls()
+            && !cc.callee_pops_stack_args()
+            && !matches!(
+                isa.triple().architecture,
+                target_lexicon::Architecture::X86_64 | target_lexicon::Architecture::Aarch64(_)
+            )
+        {
+            errors.report((
+                inst,
+                self.context(inst),
+                format!("calling convention `{cc}` supports tail calls only on x86_64 and aarch64"),
+            ));
+        }
         let types = signature.returns.iter().map(|param| param.value_type);
         self.typecheck_return_types(inst, types, errors, "results of callee must match caller")?;
         Ok(())

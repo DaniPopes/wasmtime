@@ -1,0 +1,17 @@
+test verifier
+target riscv64
+
+
+;; Conventions where the caller pops the stack arguments only support tail calls on x86_64 and
+;; aarch64.
+function %test_1(i32) -> i32 system_v {
+    fn0 = %wow(i32) -> i32 system_v
+    block0(v0: i32):
+        return_call fn0(v0) ; error: calling convention `system_v` supports tail calls only on x86_64 and aarch64
+}
+
+function %test_2(i32) -> i32 tail { ; Ok
+    fn0 = %wow(i32) -> i32 tail
+    block0(v0: i32):
+        return_call fn0(v0)
+}

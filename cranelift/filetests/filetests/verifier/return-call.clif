@@ -19,10 +19,16 @@ function %test_3(i32) -> i32 tail {
                             ; error: callee's calling convention must match caller
 }
 
-function %test_4(i32) -> i32 system_v {
+function %test_4(i32) -> i32 system_v { ; Ok
     fn0 = %wow(i32) -> i32 system_v
     block0(v0: i32):
-        return_call fn0(v0) ; error: calling convention `system_v` does not support tail calls
+        return_call fn0(v0)
+}
+
+function %test_4b(i32) preserve_all {
+    fn0 = %wow(i32) preserve_all
+    block0(v0: i32):
+        return_call fn0(v0) ; error: calling convention `preserve_all` does not support tail calls
 }
 
 function %test_5(i32) tail {

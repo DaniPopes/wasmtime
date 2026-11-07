@@ -103,11 +103,24 @@ impl CallConv {
     }
 
     /// Does this calling convention support tail calls?
+    ///
+    /// Conventions where the caller pops the stack arguments only support them on x86-64 and
+    /// aarch64, and the callee's stack arguments have to fit in the incoming argument area of
+    /// the caller.
     pub fn supports_tail_calls(&self) -> bool {
         match self {
-            CallConv::Tail | CallConv::PreserveNone => true,
+            CallConv::Tail
+            | CallConv::PreserveNone
+            | CallConv::SystemV
+            | CallConv::AppleAarch64
+            | CallConv::WindowsFastcall => true,
             _ => false,
         }
+    }
+
+    /// Does the callee of this calling convention pop its stack arguments?
+    pub fn callee_pops_stack_args(&self) -> bool {
+        matches!(self, CallConv::Tail | CallConv::Winch)
     }
 
     /// Does this calling convention support exceptions?
