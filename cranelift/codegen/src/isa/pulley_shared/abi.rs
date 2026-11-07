@@ -57,6 +57,12 @@ where
         add_ret_area_ptr: bool,
         mut args: ArgsAccumulator,
     ) -> CodegenResult<(u32, Option<usize>)> {
+        if call_conv == isa::CallConv::PreserveNone {
+            return Err(crate::CodegenError::Unsupported(
+                "the `preserve_none` calling convention is not supported on pulley".to_owned(),
+            ));
+        }
+
         // NB: make sure this method stays in sync with
         // `cranelift_pulley::interp::Vm::call`.
         //
@@ -579,6 +585,7 @@ where
             | isa::CallConv::WindowsFastcall
             | isa::CallConv::AppleAarch64
             | isa::CallConv::Probestack
+            | isa::CallConv::PreserveNone
             | isa::CallConv::Winch => &[],
         }
     }

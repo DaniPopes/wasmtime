@@ -901,6 +901,8 @@ impl ABIMachineSpec for X64ABIMachineSpec {
             (isa::CallConv::SystemV, _) => SYSV_CLOBBERS,
             (isa::CallConv::WindowsFastcall, false) => WINDOWS_CLOBBERS,
             (isa::CallConv::PreserveAll, _) => NO_CLOBBERS,
+            // Only the frame pointer, which is not allocatable, is preserved.
+            (isa::CallConv::PreserveNone, _) => ALL_CLOBBERS,
             (_, false) => SYSV_CLOBBERS,
             (call_conv, true) => panic!("unimplemented clobbers for exn abi of {call_conv:?}"),
         }
@@ -929,9 +931,9 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         debug_assert!(tail_args_size >= incoming_args_size);
 
         let mut regs: Vec<Writable<RealReg>> = match call_conv {
-            // The `winch` calling convention doesn't have any callee-save
+            // The `winch` and `preserve_none` calling conventions don't have any callee-save
             // registers.
-            CallConv::Winch => vec![],
+            CallConv::Winch | CallConv::PreserveNone => vec![],
             CallConv::Fast | CallConv::SystemV | CallConv::Tail => regs
                 .iter()
                 .cloned()
@@ -982,9 +984,10 @@ impl ABIMachineSpec for X64ABIMachineSpec {
     fn exception_payload_regs(call_conv: isa::CallConv) -> &'static [Reg] {
         const PAYLOAD_REGS: &'static [Reg] = &[regs::rax(), regs::rdx()];
         match call_conv {
-            isa::CallConv::SystemV | isa::CallConv::Tail | isa::CallConv::PreserveAll => {
-                PAYLOAD_REGS
-            }
+            isa::CallConv::SystemV
+            | isa::CallConv::Tail
+            | isa::CallConv::PreserveAll
+            | isa::CallConv::PreserveNone => PAYLOAD_REGS,
             _ => &[],
         }
     }
@@ -1023,6 +1026,26 @@ impl From<StackAMode> for SyntheticAmode {
 }
 
 fn get_intreg_for_arg(call_conv: CallConv, idx: usize, arg_idx: usize) -> Option<Reg> {
+    if call_conv == CallConv::PreserveNone {
+        // Like LLVM's `preserve_none`: registers that other conventions preserve come first, so
+        // that functions calling them do not have to save the incoming arguments.
+        return match idx {
+            0 => Some(regs::r12()),
+            1 => Some(regs::r13()),
+            2 => Some(regs::r14()),
+            3 => Some(regs::r15()),
+            4 => Some(regs::rdi()),
+            5 => Some(regs::rsi()),
+            6 => Some(regs::rdx()),
+            7 => Some(regs::rcx()),
+            8 => Some(regs::r8()),
+            9 => Some(regs::r9()),
+            10 => Some(regs::r11()),
+            11 => Some(regs::rax()),
+            _ => None,
+        };
+    }
+
     let is_fastcall = call_conv == CallConv::WindowsFastcall;
 
     // Fastcall counts by absolute argument number; SysV counts by argument of
@@ -1087,12 +1110,14 @@ fn get_intreg_for_retval(
             // NB: `r15` is reserved as a scratch register.
             _ => None,
         },
-        CallConv::Fast | CallConv::SystemV | CallConv::PreserveAll => match intreg_idx {
-            0 => Some(regs::rax()),
-            1 => Some(regs::rdx()),
-            2 if flags.enable_llvm_abi_extensions() => Some(regs::rcx()),
-            _ => None,
-        },
+        CallConv::Fast | CallConv::SystemV | CallConv::PreserveAll | CallConv::PreserveNone => {
+            match intreg_idx {
+                0 => Some(regs::rax()),
+                1 => Some(regs::rdx()),
+                2 if flags.enable_llvm_abi_extensions() => Some(regs::rcx()),
+                _ => None,
+            }
+        }
         CallConv::WindowsFastcall => match intreg_idx {
             0 => Some(regs::rax()),
             1 => Some(regs::rdx()), // The Rust ABI for i128s needs this.
@@ -1118,11 +1143,13 @@ fn get_fltreg_for_retval(call_conv: CallConv, fltreg_idx: usize, is_last: bool) 
             7 => Some(regs::xmm7()),
             _ => None,
         },
-        CallConv::Fast | CallConv::SystemV | CallConv::PreserveAll => match fltreg_idx {
-            0 => Some(regs::xmm0()),
-            1 => Some(regs::xmm1()),
-            _ => None,
-        },
+        CallConv::Fast | CallConv::SystemV | CallConv::PreserveAll | CallConv::PreserveNone => {
+            match fltreg_idx {
+                0 => Some(regs::xmm0()),
+                1 => Some(regs::xmm1()),
+                _ => None,
+            }
+        }
         CallConv::WindowsFastcall => match fltreg_idx {
             0 => Some(regs::xmm0()),
             1 => Some(regs::xmm1()), // The Rust ABI for float scalar pairs needs this.

@@ -91,6 +91,12 @@ impl ABIMachineSpec for Riscv64MachineDeps {
         add_ret_area_ptr: bool,
         mut args: ArgsAccumulator,
     ) -> CodegenResult<(u32, Option<usize>)> {
+        if call_conv == isa::CallConv::PreserveNone {
+            return Err(crate::CodegenError::Unsupported(
+                "the `preserve_none` calling convention is not supported on riscv64".to_owned(),
+            ));
+        }
+
         // This implements the LP64D RISC-V ABI.
 
         assert_ne!(

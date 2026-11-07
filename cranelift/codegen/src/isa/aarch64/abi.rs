@@ -198,7 +198,17 @@ impl ABIMachineSpec for AArch64MachineDeps {
         // we can return values in up to 8 integer and
         // 8 vector registers at once.
         let max_per_class_reg_vals = 8; // x0-x7 and v0-v7
-        let mut remaining_reg_vals = 16;
+
+        // The `preserve_none` convention passes the arguments in many more integer registers.
+        let preserve_none =
+            call_conv == isa::CallConv::PreserveNone && args_or_rets == ArgsOrRets::Args;
+        let max_int_reg_vals = if preserve_none {
+            PRESERVE_NONE_INT_ARG_REGS.len() as u8
+        } else {
+            max_per_class_reg_vals
+        };
+        let mut remaining_reg_vals =
+            i32::from(max_int_reg_vals) + i32::from(max_per_class_reg_vals);
 
         let ret_area_ptr = if add_ret_area_ptr {
             debug_assert_eq!(args_or_rets, ArgsOrRets::Args);
@@ -240,7 +250,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 // of the AAPCS64).
                 let end = i + count as usize;
                 let (ints, floats) = aggregate_register_counts::<Inst>(&params[i..end])?;
-                let fits = usize::from(next_xreg) + ints <= usize::from(max_per_class_reg_vals)
+                let fits = usize::from(next_xreg) + ints <= usize::from(max_int_reg_vals)
                     && usize::from(next_vreg) + floats <= usize::from(max_per_class_reg_vals)
                     && i32::try_from(ints + floats).is_ok_and(|n| n <= remaining_reg_vals);
                 if !fits {
@@ -251,7 +261,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
                     next_stack =
                         align_to(next_stack, if is_apple_cc { align } else { align.max(8) });
                     if ints > 0 {
-                        next_xreg = max_per_class_reg_vals;
+                        next_xreg = max_int_reg_vals;
                     }
                     if floats > 0 {
                         next_vreg = max_per_class_reg_vals;
@@ -322,6 +332,39 @@ impl ABIMachineSpec for AArch64MachineDeps {
             // i.e load the lower half into x7 and the upper half into the stack
             // LLVM does not seem to do this, so we are going to replicate that behaviour
             let is_multi_reg = rcs.len() >= 2;
+            if preserve_none && is_multi_reg {
+                // LLVM assigns each half of an `i128` on its own, so a half can go in the last
+                // register and the other on the stack, and there is no even register rule.
+                let mut slots = ABIArgSlotVec::new();
+                for (part, ty) in reg_types.iter().enumerate() {
+                    if next_xreg < max_int_reg_vals {
+                        let reg = xreg(PRESERVE_NONE_INT_ARG_REGS[usize::from(next_xreg)]);
+                        slots.push(ABIArgSlot::Reg {
+                            reg: reg.to_real_reg().unwrap(),
+                            ty: *ty,
+                            extension: param.extension,
+                        });
+                        next_xreg += 1;
+                        remaining_reg_vals -= 1;
+                    } else {
+                        if part == 0 {
+                            // The whole value is on the stack, and the first half is aligned to 16.
+                            next_stack = align_to(next_stack, 16);
+                        }
+                        slots.push(ABIArgSlot::Stack {
+                            offset: next_stack as i64,
+                            ty: *ty,
+                            extension: param.extension,
+                        });
+                        next_stack += 8;
+                    }
+                }
+                args.push(ABIArg::Slots {
+                    slots,
+                    purpose: param.purpose,
+                });
+                continue;
+            }
             if is_multi_reg {
                 assert!(
                     rcs.len() == 2,
@@ -374,7 +417,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 // shadows `x7`), so later integer arguments go on the stack
                 // too.
                 if args_or_rets == ArgsOrRets::Args {
-                    next_xreg = max_per_class_reg_vals;
+                    next_xreg = max_int_reg_vals;
                 }
             } else {
                 // Single Register parameters
@@ -391,12 +434,20 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 } else {
                     // Use max_per_class_reg_vals & remaining_reg_vals otherwise
                     i >= aggregate_on_stack_until
-                        && *next_reg < max_per_class_reg_vals
+                        && *next_reg
+                            < if rc == RegClass::Int {
+                                max_int_reg_vals
+                            } else {
+                                max_per_class_reg_vals
+                            }
                         && remaining_reg_vals > 0
                 };
 
                 if push_to_reg {
                     let reg = match rc {
+                        RegClass::Int if preserve_none => {
+                            xreg(PRESERVE_NONE_INT_ARG_REGS[usize::from(*next_reg)])
+                        }
                         RegClass::Int => xreg(*next_reg),
                         RegClass::Float => vreg(*next_reg),
                         RegClass::Vector => unreachable!(),
@@ -1257,6 +1308,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
             // registers restored during unwinding.
             (isa::CallConv::AppleAarch64, true) => DEFAULT_AAPCS_CLOBBERS,
             (isa::CallConv::PreserveAll, _) => NO_CLOBBERS,
+            (isa::CallConv::PreserveNone, _) => ALL_CLOBBERS,
             (_, false) => DEFAULT_AAPCS_CLOBBERS,
             (_, true) => panic!("unimplemented clobbers for exn abi of {call_conv:?}"),
         }
@@ -1360,6 +1412,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
             isa::CallConv::SystemV
             | isa::CallConv::Tail
             | isa::CallConv::PreserveAll
+            | isa::CallConv::PreserveNone
             | isa::CallConv::AppleAarch64 => PAYLOAD_REGS,
             _ => &[],
         }
@@ -1451,6 +1504,11 @@ fn is_reg_saved_in_prologue(
         return true;
     }
 
+    // Only the frame pointer and the link register are preserved, which the frame setup saves.
+    if call_conv == isa::CallConv::PreserveNone {
+        return false;
+    }
+
     // FIXME: We need to inspect whether a function is returning Z or P regs too.
     let save_z_regs = sig
         .params
@@ -1487,6 +1545,12 @@ fn is_reg_saved_in_prologue(
         RegClass::Vector => unreachable!(),
     }
 }
+
+/// The integer argument registers of the `preserve_none` calling convention, in order, like
+/// LLVM's: the registers that other conventions preserve come first.
+const PRESERVE_NONE_INT_ARG_REGS: [u8; 24] = [
+    20, 21, 22, 23, 24, 25, 26, 27, 28, 0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 9, 15,
+];
 
 const fn default_aapcs_clobbers() -> PRegSet {
     PRegSet::empty()

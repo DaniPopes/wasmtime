@@ -432,6 +432,7 @@ mod tests {
         for &cc in &[
             CallConv::Fast,
             CallConv::PreserveAll,
+            CallConv::PreserveNone,
             CallConv::Tail,
             CallConv::SystemV,
             CallConv::WindowsFastcall,

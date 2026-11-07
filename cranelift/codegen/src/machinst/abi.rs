@@ -1245,7 +1245,8 @@ impl<M: ABIMachineSpec> Callee<M> {
                 || call_conv == isa::CallConv::WindowsFastcall
                 || call_conv == isa::CallConv::AppleAarch64
                 || call_conv == isa::CallConv::Winch
-                || call_conv == isa::CallConv::PreserveAll,
+                || call_conv == isa::CallConv::PreserveAll
+                || call_conv == isa::CallConv::PreserveNone,
             "Unsupported calling convention: {call_conv:?}"
         );
 
@@ -1558,6 +1559,27 @@ impl<M: ABIMachineSpec> Callee<M> {
         self.call_conv
     }
 
+    /// The size of the stack arguments of a tail call to `callee`, as laid out in this function's
+    /// incoming argument area.
+    ///
+    /// In conventions where the caller pops the arguments the area keeps its size, so the callee's
+    /// arguments have to fit in it.
+    pub fn tail_call_stack_arg_size(&self, sigs: &SigSet, callee: Sig) -> u32 {
+        let callee_size = sigs[callee].sized_stack_arg_space;
+        if self.call_conv == isa::CallConv::PreserveNone {
+            let own_size = self.stack_args_size(sigs);
+            assert!(
+                callee_size <= own_size,
+                "a tail call in the `{}` calling convention needs the stack arguments of the \
+                 callee ({callee_size} bytes) to fit in the ones of the caller ({own_size} bytes)",
+                self.call_conv,
+            );
+            own_size
+        } else {
+            callee_size
+        }
+    }
+
     /// Get the ABI-dependent MachineEnv for managing register allocation.
     pub fn machine_env(&self) -> &MachineEnv {
         M::get_machine_env(&self.flags, self.call_conv)
@@ -1832,9 +1854,14 @@ impl<M: ABIMachineSpec> Callee<M> {
 
         let call_conv = sigs[sig].call_conv;
         let stack_arg_space = sigs[sig].sized_stack_arg_space;
+        let tail_call_stack_arg_space = if is_tail_call {
+            self.tail_call_stack_arg_size(sigs, sig)
+        } else {
+            stack_arg_space
+        };
         let stack_arg = |offset| {
             if is_tail_call {
-                StackAMode::IncomingArg(offset, stack_arg_space)
+                StackAMode::IncomingArg(offset, tail_call_stack_arg_space)
             } else {
                 StackAMode::OutgoingArg(offset)
             }
@@ -1845,10 +1872,9 @@ impl<M: ABIMachineSpec> Callee<M> {
         let word_bits = M::word_bits() as usize;
 
         if is_tail_call {
-            debug_assert_eq!(
-                self.call_conv,
-                isa::CallConv::Tail,
-                "Can only do `return_call`s from within a `tail` calling convention function"
+            debug_assert!(
+                self.call_conv.supports_tail_calls(),
+                "Can only do `return_call`s from within a function with a tail-call convention"
             );
         }
 

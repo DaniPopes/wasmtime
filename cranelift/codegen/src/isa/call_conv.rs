@@ -60,6 +60,20 @@ pub enum CallConv {
     /// respective platform. It does not support tail-calls. It also
     /// does not support return values.
     PreserveAll,
+    /// Calling convention matching LLVM's `preserve_none`, for interoperating with code that
+    /// LLVM compiled.
+    ///
+    /// Unlike every other convention, it does not preserve any register except the frame pointer
+    /// (and the link register on aarch64, and the platform register `x18`). In exchange, the
+    /// first arguments are passed in many more integer registers, starting with ones that
+    /// ordinary functions preserve. Other than that it follows the native C convention of each
+    /// platform, with caller-popped stack arguments:
+    /// - x86-64: integers in r12, r13, r14, r15, rdi, rsi, rdx, rcx, r8, r9, r11, rax
+    /// - aarch64: integers in x20-x28, x0-x7, x10-x14, x9, x15
+    ///
+    /// It supports tail calls to functions with the same convention and a stack argument area
+    /// that fits in the one of the caller, as they reuse it.
+    PreserveNone,
 }
 
 impl CallConv {
@@ -91,7 +105,7 @@ impl CallConv {
     /// Does this calling convention support tail calls?
     pub fn supports_tail_calls(&self) -> bool {
         match self {
-            CallConv::Tail => true,
+            CallConv::Tail | CallConv::PreserveNone => true,
             _ => false,
         }
     }
@@ -103,6 +117,7 @@ impl CallConv {
             | CallConv::SystemV
             | CallConv::Winch
             | CallConv::PreserveAll
+            | CallConv::PreserveNone
             | CallConv::AppleAarch64 => true,
             _ => false,
         }
@@ -121,13 +136,15 @@ impl CallConv {
     /// destinations as this return value.
     pub fn exception_payload_types(&self, pointer_ty: Type) -> &[Type] {
         match self {
-            CallConv::Tail | CallConv::SystemV | CallConv::PreserveAll | CallConv::AppleAarch64 => {
-                match pointer_ty {
-                    types::I32 => &[types::I32, types::I32],
-                    types::I64 => &[types::I64, types::I64],
-                    _ => unreachable!(),
-                }
-            }
+            CallConv::Tail
+            | CallConv::SystemV
+            | CallConv::PreserveAll
+            | CallConv::PreserveNone
+            | CallConv::AppleAarch64 => match pointer_ty {
+                types::I32 => &[types::I32, types::I32],
+                types::I64 => &[types::I64, types::I64],
+                _ => unreachable!(),
+            },
             _ => &[],
         }
     }
@@ -144,6 +161,7 @@ impl fmt::Display for CallConv {
             Self::Probestack => "probestack",
             Self::Winch => "winch",
             Self::PreserveAll => "preserve_all",
+            Self::PreserveNone => "preserve_none",
         })
     }
 }
@@ -160,6 +178,7 @@ impl str::FromStr for CallConv {
             "probestack" => Ok(Self::Probestack),
             "winch" => Ok(Self::Winch),
             "preserve_all" => Ok(Self::PreserveAll),
+            "preserve_none" => Ok(Self::PreserveNone),
             _ => Err(()),
         }
     }
