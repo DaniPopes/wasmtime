@@ -373,6 +373,10 @@ pub trait ABIMachineSpec {
     /// with 32-bit arithmetic.
     const STACK_ARG_RET_SIZE_LIMIT: u32;
 
+    /// The largest stack argument area that a callee can pop on return, for the
+    /// conventions in which the callee pops its arguments.
+    const CALLEE_POP_SIZE_LIMIT: u32 = u32::MAX;
+
     /// Returns the number of bits in a word, that is 32/64 for 32/64-bit architecture.
     fn word_bits() -> u32;
 
@@ -1043,6 +1047,12 @@ impl SigSet {
 
         // To avoid overflow issues, limit the arg size to something reasonable.
         if sized_stack_arg_space > M::STACK_ARG_RET_SIZE_LIMIT {
+            return Err(CodegenError::ImplLimitExceeded);
+        }
+
+        if matches!(call_conv, isa::CallConv::Tail | isa::CallConv::Tailcc)
+            && sized_stack_arg_space > M::CALLEE_POP_SIZE_LIMIT
+        {
             return Err(CodegenError::ImplLimitExceeded);
         }
 
