@@ -1375,14 +1375,14 @@ impl<'a> Parser<'a> {
 
     // Parse a function signature.
     //
-    // signature ::=  * "(" [paramlist] ")" ["->" retlist] ["variadic"] [callconv]
+    // signature ::=  * "(" [paramlist] ")" ["->" retlist] [callconv]
     //
     fn parse_signature(&mut self) -> ParseResult<Signature> {
         // Calling convention defaults to `fast`, but can be changed.
         let mut sig = Signature::new(self.default_calling_convention);
 
         self.match_token(Token::LPar, "expected function signature: ( args... )")?;
-        // signature ::=  "(" * [abi-param-list] ")" ["->" retlist] ["variadic"] [callconv]
+        // signature ::=  "(" * [abi-param-list] ")" ["->" retlist] [callconv]
         if self.token() != Some(Token::RPar) {
             sig.params = self.parse_abi_param_list()?;
         }
@@ -1390,8 +1390,6 @@ impl<'a> Parser<'a> {
         if self.optional(Token::Arrow) {
             sig.returns = self.parse_abi_param_list()?;
         }
-
-        sig.variadic = self.optional(Token::Identifier("variadic"));
 
         // The calling convention is optional.
         match self.token() {

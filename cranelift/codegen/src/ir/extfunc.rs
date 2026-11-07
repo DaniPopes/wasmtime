@@ -32,12 +32,6 @@ pub struct Signature {
 
     /// Calling convention.
     pub call_conv: CallConv,
-
-    /// Whether the call passes arguments to a C-style variadic function. Targets whose variadic
-    /// convention needs extra setup at the call site, such as x86-64 System V (the number of
-    /// vector registers used in `al`), perform it. Variadic arguments are listed in `params` like
-    /// any other.
-    pub variadic: bool,
 }
 
 impl Signature {
@@ -47,7 +41,6 @@ impl Signature {
             params: Vec::new(),
             returns: Vec::new(),
             call_conv,
-            variadic: false,
         }
     }
 
@@ -56,7 +49,6 @@ impl Signature {
         self.params.clear();
         self.returns.clear();
         self.call_conv = call_conv;
-        self.variadic = false;
     }
 
     /// Find the index of a presumed unique special-purpose parameter.
@@ -133,9 +125,6 @@ impl fmt::Display for Signature {
         if !self.returns.is_empty() {
             write!(f, " -> ")?;
             write_list(f, &self.returns)?;
-        }
-        if self.variadic {
-            write!(f, " variadic")?;
         }
         write!(f, " {}", self.call_conv)
     }

@@ -583,18 +583,6 @@ pub trait ABIMachineSpec {
         alloc_tmp: F,
     ) -> SmallVec<[Self::I; 8]>;
 
-    /// Set up registers that the calling convention requires for a call to a variadic function,
-    /// beyond the arguments themselves. `vector_regs_used` is the number of vector registers that
-    /// carry arguments. Called for calls whose signature is variadic.
-    fn gen_variadic_call_setup(
-        _call_conv: isa::CallConv,
-        _vector_regs_used: u8,
-        _uses: &mut CallArgList,
-        _insts: &mut SmallInstVec<Self::I>,
-        _alloc_tmp: impl FnMut(Type) -> Writable<Reg>,
-    ) {
-    }
-
     /// Get the number of spillslots required for the given register-class.
     fn get_number_of_spillslots_for_value(
         rc: RegClass,
@@ -768,9 +756,6 @@ pub struct SigData {
 
     /// Calling convention used.
     call_conv: isa::CallConv,
-
-    /// Whether a call with this signature passes arguments to a variadic function.
-    variadic: bool,
 }
 
 impl SigData {
@@ -997,7 +982,6 @@ impl SigSet {
             sized_stack_ret_space,
             stack_ret_arg,
             call_conv: sig.call_conv,
-            variadic: sig.variadic,
         })
     }
 
@@ -2021,27 +2005,6 @@ impl<M: ABIMachineSpec> Callee<M> {
                 }
                 _ => unreachable!(),
             }
-        }
-
-        if sigs[sig].variadic {
-            let vector_regs_used = sigs
-                .args(sig)
-                .iter()
-                .flat_map(|arg| match arg {
-                    ABIArg::Slots { slots, .. } => slots.as_slice(),
-                    _ => &[],
-                })
-                .filter(|slot| {
-                    matches!(slot, ABIArgSlot::Reg { reg, .. } if reg.class() == RegClass::Float)
-                })
-                .count();
-            M::gen_variadic_call_setup(
-                call_conv,
-                u8::try_from(vector_regs_used).unwrap(),
-                &mut uses,
-                &mut insts,
-                |ty| Writable::from_reg(vregs.alloc_with_deferred_error(ty).only_reg().unwrap()),
-            );
         }
 
         (uses, insts)
