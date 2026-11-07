@@ -71,6 +71,16 @@ pub struct DataDescription {
     /// Whether or not to request the linker to preserve this data object even
     /// if not referenced.
     pub used: bool,
+    /// Whether the contents are one NUL-terminated string that the linker may
+    /// merge with identical strings from other object files, like the constant
+    /// strings of LLVM.
+    ///
+    /// The contents must end in one NUL byte and hold no other NUL byte, the
+    /// data must be read-only and relocation-free, and nothing may depend on
+    /// its address being unique. Only the Object backend uses this. It ignores
+    /// the flag on targets without mergeable sections or that need symbols
+    /// aligned, and for data with an alignment above one or a custom section.
+    pub mergeable_cstring: bool,
 }
 
 impl DataDescription {
@@ -85,6 +95,7 @@ impl DataDescription {
             custom_section: None,
             align: None,
             used: false,
+            mergeable_cstring: false,
         }
     }
 
@@ -98,6 +109,7 @@ impl DataDescription {
         self.custom_section = None;
         self.align = None;
         self.used = false;
+        self.mergeable_cstring = false;
     }
 
     /// Define a zero-initialized object with the given size.
@@ -129,6 +141,12 @@ impl DataDescription {
     /// not referenced.
     pub fn set_used(&mut self, used: bool) {
         self.used = used;
+    }
+
+    /// Set whether the contents are one NUL-terminated string that the linker
+    /// may merge with identical strings. See [`DataDescription::mergeable_cstring`].
+    pub fn set_mergeable_cstring(&mut self, mergeable_cstring: bool) {
+        self.mergeable_cstring = mergeable_cstring;
     }
 
     /// Declare an external function import.

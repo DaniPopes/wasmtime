@@ -599,6 +599,7 @@ impl Module for JITModule {
             custom_section: _,
             align,
             used: _,
+            mergeable_cstring: _,
         } = data;
 
         let (align, kind) = if decl.writable {
