@@ -86,6 +86,9 @@ impl ABIMachineSpec for X64ABIMachineSpec {
     /// with 32-bit arithmetic: for now, 128 MB.
     const STACK_ARG_RET_SIZE_LIMIT: u32 = 128 * 1024 * 1024;
 
+    // `ret imm16` pops the arguments; leave room to align the area to 16 bytes.
+    const CALLEE_POP_SIZE_LIMIT: u32 = u16::MAX as u32 - 31;
+
     fn word_bits() -> u32 {
         64
     }
