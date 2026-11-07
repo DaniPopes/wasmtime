@@ -399,7 +399,7 @@ fn riscv64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             // x10 is a0 which is both the first argument and the first return value.
             collector.reg_fixed_def(rd, a0());
             let mut clobbers =
-                Riscv64MachineDeps::get_regs_clobbered_by_call(CallConv::SystemV, false);
+                Riscv64MachineDeps::get_regs_clobbered_by_call(CallConv::SystemV, false, false);
             clobbers.remove(px_reg(10));
             collector.reg_clobbers(clobbers);
         }

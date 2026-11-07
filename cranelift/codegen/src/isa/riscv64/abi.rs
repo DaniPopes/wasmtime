@@ -600,8 +600,10 @@ impl ABIMachineSpec for Riscv64MachineDeps {
                     }
                 ],
                 defs: smallvec![],
-                clobbers: Self::get_regs_clobbered_by_call(call_conv, false),
+                clobbers: Self::get_regs_clobbered_by_call(call_conv, false, false),
                 caller_conv: call_conv,
+                caller_preserve_most: false,
+                callee_preserve_most: false,
                 callee_conv: call_conv,
                 callee_pop_size: 0,
                 try_call_info: None,
@@ -631,6 +633,7 @@ impl ABIMachineSpec for Riscv64MachineDeps {
 
     fn get_regs_clobbered_by_call(
         call_conv_of_callee: isa::CallConv,
+        _preserve_most: bool,
         is_exception: bool,
     ) -> PRegSet {
         match call_conv_of_callee {
@@ -648,6 +651,7 @@ impl ABIMachineSpec for Riscv64MachineDeps {
 
     fn compute_frame_layout(
         call_conv: isa::CallConv,
+        _preserve_most: bool,
         flags: &settings::Flags,
         _sig: &Signature,
         regs: &[Writable<RealReg>],

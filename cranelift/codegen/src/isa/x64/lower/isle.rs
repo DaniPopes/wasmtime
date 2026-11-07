@@ -348,6 +348,7 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
             dest,
             uses,
             tmp: self.lower_ctx.temp_writable_gpr(),
+            preserve_most: self.lower_ctx.abi().preserve_most(),
             new_stack_arg_size,
         })
     }
@@ -370,6 +371,7 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
             dest,
             uses,
             tmp: self.lower_ctx.temp_writable_gpr(),
+            preserve_most: self.lower_ctx.abi().preserve_most(),
             new_stack_arg_size,
         })
     }

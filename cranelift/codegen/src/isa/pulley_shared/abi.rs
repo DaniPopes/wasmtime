@@ -497,6 +497,7 @@ where
 
     fn get_regs_clobbered_by_call(
         call_conv_of_callee: isa::CallConv,
+        _preserve_most: bool,
         is_exception: bool,
     ) -> PRegSet {
         if is_exception {
@@ -510,6 +511,7 @@ where
 
     fn compute_frame_layout(
         call_conv: isa::CallConv,
+        _preserve_most: bool,
         flags: &settings::Flags,
         _sig: &Signature,
         regs: &[Writable<RealReg>],
@@ -590,6 +592,7 @@ where
             | isa::CallConv::AppleAarch64
             | isa::CallConv::Probestack
             | isa::CallConv::PreserveNone
+            | isa::CallConv::PreserveMost
             | isa::CallConv::Winch => &[],
         }
     }

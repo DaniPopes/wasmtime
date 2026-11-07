@@ -887,10 +887,12 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                 },
             ],
             defs: smallvec![],
-            clobbers: Self::get_regs_clobbered_by_call(call_conv, false),
+            clobbers: Self::get_regs_clobbered_by_call(call_conv, false, false),
             callee_pop_size,
             callee_conv: call_conv,
             caller_conv: call_conv,
+            callee_preserve_most: false,
+            caller_preserve_most: false,
             try_call_info: None,
             patchable: false,
         })));
@@ -922,8 +924,15 @@ impl ABIMachineSpec for X64ABIMachineSpec {
 
     fn get_regs_clobbered_by_call(
         call_conv_of_callee: isa::CallConv,
+        preserve_most: bool,
         is_exception: bool,
     ) -> PRegSet {
+        if preserve_most {
+            return match call_conv_of_callee {
+                isa::CallConv::WindowsFastcall => WINDOWS_PRESERVE_MOST_CLOBBERS,
+                _ => SYSV_PRESERVE_MOST_CLOBBERS,
+            };
+        }
         match (call_conv_of_callee, is_exception) {
             (isa::CallConv::Tail, true) => ALL_CLOBBERS,
             // Note that "PreserveAll" actually preserves nothing at
@@ -953,6 +962,7 @@ impl ABIMachineSpec for X64ABIMachineSpec {
 
     fn compute_frame_layout(
         call_conv: CallConv,
+        preserve_most: bool,
         flags: &settings::Flags,
         _sig: &Signature,
         regs: &[Writable<RealReg>],
@@ -972,17 +982,23 @@ impl ABIMachineSpec for X64ABIMachineSpec {
             CallConv::Fast | CallConv::SystemV | CallConv::Tail => regs
                 .iter()
                 .cloned()
-                .filter(|r| is_callee_save_systemv(r.to_reg(), flags.enable_pinned_reg()))
+                .filter(|r| {
+                    is_callee_save_systemv(r.to_reg(), flags.enable_pinned_reg())
+                        || (preserve_most && is_preserved_by_preserve_most(r.to_reg()))
+                })
                 .collect(),
             CallConv::WindowsFastcall => regs
                 .iter()
                 .cloned()
-                .filter(|r| is_callee_save_fastcall(r.to_reg(), flags.enable_pinned_reg()))
+                .filter(|r| {
+                    is_callee_save_fastcall(r.to_reg(), flags.enable_pinned_reg())
+                        || (preserve_most && is_preserved_by_preserve_most(r.to_reg()))
+                })
                 .collect(),
             // The `preserve_all` calling convention makes every reg a callee-save reg.
             CallConv::PreserveAll => regs.iter().cloned().collect(),
             CallConv::Probestack => todo!("probestack?"),
-            CallConv::AppleAarch64 => unreachable!(),
+            CallConv::AppleAarch64 | CallConv::PreserveMost => unreachable!(),
         };
         // Sort registers for deterministic code output. We can do an unstable sort because the
         // registers will be unique (there are no dups).
@@ -1174,7 +1190,7 @@ fn get_intreg_for_retval(
 
         CallConv::Winch => is_last.then(|| regs::rax()),
         CallConv::Probestack => todo!(),
-        CallConv::AppleAarch64 => unreachable!(),
+        CallConv::AppleAarch64 | CallConv::PreserveMost => unreachable!(),
     }
 }
 
@@ -1205,7 +1221,7 @@ fn get_fltreg_for_retval(call_conv: CallConv, fltreg_idx: usize, is_last: bool) 
         },
         CallConv::Winch => is_last.then(|| regs::xmm0()),
         CallConv::Probestack => todo!(),
-        CallConv::AppleAarch64 => unreachable!(),
+        CallConv::AppleAarch64 | CallConv::PreserveMost => unreachable!(),
     }
 }
 
@@ -1221,6 +1237,18 @@ fn is_callee_save_systemv(r: RealReg, enable_pinned_reg: bool) -> bool {
             R15 => !enable_pinned_reg,
             _ => false,
         },
+        RegClass::Float => false,
+        RegClass::Vector => unreachable!(),
+    }
+}
+
+/// The general purpose registers, in addition to the callee-saved ones, that the `preserve_most`
+/// convention preserves: all except `r11`.
+fn is_preserved_by_preserve_most(r: RealReg) -> bool {
+    use asm::gpr::enc::*;
+
+    match r.class() {
+        RegClass::Int => matches!(r.hw_enc(), RAX | RCX | RDX | RSI | RDI | R8 | R9 | R10),
         RegClass::Float => false,
         RegClass::Vector => unreachable!(),
     }
@@ -1264,8 +1292,24 @@ fn compute_clobber_size(clobbers: &[Writable<RealReg>]) -> u32 {
 
 const WINDOWS_CLOBBERS: PRegSet = windows_clobbers();
 const SYSV_CLOBBERS: PRegSet = sysv_clobbers();
+const WINDOWS_PRESERVE_MOST_CLOBBERS: PRegSet = preserve_most_clobbers(6);
+const SYSV_PRESERVE_MOST_CLOBBERS: PRegSet = preserve_most_clobbers(16);
 pub(crate) const ALL_CLOBBERS: PRegSet = all_clobbers();
 const NO_CLOBBERS: PRegSet = PRegSet::empty();
+
+/// The registers a call to a `preserve_most` function clobbers: `r11` and the first `vectors`
+/// vector registers, which the native convention clobbers.
+const fn preserve_most_clobbers(vectors: u8) -> PRegSet {
+    use asm::gpr::enc::*;
+
+    let mut clobbers = PRegSet::empty().with(regs::gpr_preg(R11));
+    let mut xmm = 0;
+    while xmm < vectors {
+        clobbers = clobbers.with(regs::fpr_preg(xmm));
+        xmm += 1;
+    }
+    clobbers
+}
 
 const fn windows_clobbers() -> PRegSet {
     use asm::gpr::enc::*;

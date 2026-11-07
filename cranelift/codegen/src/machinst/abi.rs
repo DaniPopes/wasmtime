@@ -498,6 +498,7 @@ pub trait ABIMachineSpec {
     /// and epilogue routines.
     fn compute_frame_layout(
         call_conv: isa::CallConv,
+        preserve_most: bool,
         flags: &settings::Flags,
         sig: &Signature,
         regs: &[Writable<RealReg>],
@@ -595,8 +596,13 @@ pub trait ABIMachineSpec {
 
     /// Get all caller-save registers, that is, registers that we expect
     /// not to be saved across a call to a callee with the given ABI.
+    ///
+    /// `preserve_most` is set when the callee has the `preserve_most` calling convention, in which
+    /// case `call_conv_of_callee` is the convention that decides where its arguments and return
+    /// values are.
     fn get_regs_clobbered_by_call(
         call_conv_of_callee: isa::CallConv,
+        preserve_most: bool,
         is_exception: bool,
     ) -> PRegSet;
 
@@ -646,6 +652,10 @@ pub struct CallInfo<T> {
     pub callee_conv: isa::CallConv,
     /// The calling convention of the caller.
     pub caller_conv: isa::CallConv,
+    /// Whether the callee has the `preserve_most` calling convention.
+    pub callee_preserve_most: bool,
+    /// Whether the caller has the `preserve_most` calling convention.
+    pub caller_preserve_most: bool,
     /// The number of bytes that the callee will pop from the stack for the
     /// caller, if any. (Used for popping stack arguments with the `tail`
     /// calling convention.)
@@ -694,6 +704,8 @@ impl<T> CallInfo<T> {
             clobbers: PRegSet::empty(),
             caller_conv: call_conv,
             callee_conv: call_conv,
+            caller_preserve_most: false,
+            callee_preserve_most: false,
             callee_pop_size: 0,
             try_call_info: None,
             patchable: false,
@@ -754,8 +766,11 @@ pub struct SigData {
     /// Index in `args` of the stack-return-value-area argument.
     stack_ret_arg: Option<u16>,
 
-    /// Calling convention used.
+    /// Calling convention used. For `preserve_most` this is the one of the target.
     call_conv: isa::CallConv,
+
+    /// Whether the calling convention is `preserve_most`.
+    preserve_most: bool,
 }
 
 impl SigData {
@@ -772,6 +787,12 @@ impl SigData {
     /// Get calling convention used.
     pub fn call_conv(&self) -> isa::CallConv {
         self.call_conv
+    }
+
+    /// Whether the callee preserves more registers than the calling convention says, as in the
+    /// `preserve_most` calling convention.
+    pub fn preserve_most(&self) -> bool {
+        self.preserve_most
     }
 
     /// The index of the stack-return-value-area argument, if any.
@@ -809,12 +830,19 @@ pub struct SigSet {
 
     /// The actual ABI signatures, keyed by `Sig`.
     sigs: PrimaryMap<Sig, SigData>,
+
+    /// The calling convention of the target, which the `preserve_most` convention is based on.
+    default_call_conv: isa::CallConv,
 }
 
 impl SigSet {
     /// Construct a new `SigSet`, interning all of the signatures used by the
     /// given function.
-    pub fn new<M>(func: &ir::Function, flags: &settings::Flags) -> CodegenResult<Self>
+    pub fn new<M>(
+        func: &ir::Function,
+        flags: &settings::Flags,
+        default_call_conv: isa::CallConv,
+    ) -> CodegenResult<Self>
     where
         M: ABIMachineSpec,
     {
@@ -825,6 +853,7 @@ impl SigSet {
             ir_sig_ref_to_abi_sig: SecondaryMap::with_capacity(func.dfg.signatures.len()),
             abi_args: Vec::with_capacity(arg_estimate),
             sigs: PrimaryMap::with_capacity(1 + func.dfg.signatures.len()),
+            default_call_conv,
         };
 
         sigs.make_abi_sig_from_ir_signature::<M>(func.signature.clone(), flags)?;
@@ -919,6 +948,8 @@ impl SigSet {
             sig.returns.as_slice()
         };
 
+        let (call_conv, preserve_most) = sig.call_conv.split_preserve_most(self.default_call_conv);
+
         // Compute args and retvals from signature. Handle retvals first,
         // because we may need to add a return-area arg to the args.
 
@@ -926,7 +957,7 @@ impl SigSet {
         // `SigSet::args()` and `SigSet::rets()`. Therefore, we cannot change the two
         // compute_arg_locs order.
         let (sized_stack_ret_space, _) = M::compute_arg_locs(
-            sig.call_conv,
+            call_conv,
             flags,
             &returns,
             ArgsOrRets::Rets,
@@ -949,7 +980,7 @@ impl SigSet {
         }
 
         let (sized_stack_arg_space, stack_ret_arg) = M::compute_arg_locs(
-            sig.call_conv,
+            call_conv,
             flags,
             &sig.params,
             ArgsOrRets::Args,
@@ -981,7 +1012,8 @@ impl SigSet {
             sized_stack_arg_space,
             sized_stack_ret_space,
             stack_ret_arg,
-            call_conv: sig.call_conv,
+            call_conv,
+            preserve_most,
         })
     }
 
@@ -1184,6 +1216,8 @@ pub struct Callee<M: ABIMachineSpec> {
     ret_area_ptr: Option<Reg>,
     /// Calling convention this function expects.
     call_conv: isa::CallConv,
+    /// Whether the calling convention is `preserve_most`.
+    preserve_most: bool,
     /// The settings controlling this function's compilation.
     flags: settings::Flags,
     /// The ISA-specific flag values controlling this function's compilation.
@@ -1236,7 +1270,8 @@ impl<M: ABIMachineSpec> Callee<M> {
         let flags = isa.flags().clone();
         let sig = sigs.abi_sig_for_signature(&f.signature);
 
-        let call_conv = f.signature.call_conv;
+        let call_conv = sigs[sig].call_conv;
+        let preserve_most = sigs[sig].preserve_most;
         // Only these calling conventions are supported.
         debug_assert!(
             call_conv == isa::CallConv::SystemV
@@ -1340,6 +1375,7 @@ impl<M: ABIMachineSpec> Callee<M> {
             frame_layout: None,
             ret_area_ptr: None,
             call_conv,
+            preserve_most,
             flags,
             isa_flags: isa_flags.clone(),
             stack_limit,
@@ -1557,6 +1593,12 @@ impl<M: ABIMachineSpec> Callee<M> {
     /// Get the calling convention implemented by this ABI object.
     pub fn call_conv(&self) -> isa::CallConv {
         self.call_conv
+    }
+
+    /// Whether this ABI object implements the `preserve_most` calling convention, which
+    /// `call_conv` is then the native convention of.
+    pub fn preserve_most(&self) -> bool {
+        self.preserve_most
     }
 
     /// The size of the stack arguments of a tail call to `callee`, as laid out in this function's
@@ -2166,13 +2208,17 @@ impl<M: ABIMachineSpec> Callee<M> {
     ) -> CallInfo<T> {
         let caller_conv = self.call_conv;
         let callee_conv = sigs[sig].call_conv;
+        let callee_preserve_most = sigs[sig].preserve_most;
         let stack_arg_space = sigs[sig].sized_stack_arg_space;
 
         let clobbers = {
             // Get clobbers: all caller-saves. These may include return value
             // regs, which we will remove from the clobber set below.
-            let mut clobbers =
-                <M>::get_regs_clobbered_by_call(callee_conv, try_call_info.is_some());
+            let mut clobbers = <M>::get_regs_clobbered_by_call(
+                callee_conv,
+                callee_preserve_most,
+                try_call_info.is_some(),
+            );
 
             // Remove retval regs from clobbers.
             for def in &defs {
@@ -2209,6 +2255,8 @@ impl<M: ABIMachineSpec> Callee<M> {
             clobbers,
             callee_conv,
             caller_conv,
+            callee_preserve_most,
+            caller_preserve_most: self.preserve_most,
             callee_pop_size,
             try_call_info,
             patchable,
@@ -2273,8 +2321,31 @@ impl<M: ABIMachineSpec> Callee<M> {
         let total_stacksize = self.stackslots_size + bytes * spillslots as u32;
         let mask = M::stack_align(self.call_conv) - 1;
         let total_stacksize = (total_stacksize + mask) & !mask; // 16-align the stack.
+        // Registers that return values are not preserved by the callee, whatever its convention
+        // says.
+        let clobbered = if self.preserve_most {
+            let returns: Vec<_> = sigs
+                .rets(self.sig)
+                .iter()
+                .flat_map(|ret| match ret {
+                    ABIArg::Slots { slots, .. } => slots.as_slice(),
+                    _ => &[],
+                })
+                .filter_map(|slot| match slot {
+                    ABIArgSlot::Reg { reg, .. } => Some(*reg),
+                    ABIArgSlot::Stack { .. } => None,
+                })
+                .collect();
+            clobbered
+                .into_iter()
+                .filter(|reg| !returns.contains(&reg.to_reg()))
+                .collect()
+        } else {
+            clobbered
+        };
         let frame_layout = M::compute_frame_layout(
             self.call_conv,
+            self.preserve_most,
             &self.flags,
             self.signature(),
             &clobbered,
@@ -2591,8 +2662,12 @@ impl<T> CallInfo<T> {
         // any returns at all (e.g., preserve-all ABI).
         debug_assert!(
             self.defs.is_empty()
-                || M::get_regs_clobbered_by_call(self.callee_conv, self.try_call_info.is_some())
-                    .contains(PReg::from(temp.to_reg().to_real_reg().unwrap()))
+                || M::get_regs_clobbered_by_call(
+                    self.callee_conv,
+                    self.callee_preserve_most,
+                    self.try_call_info.is_some(),
+                )
+                .contains(PReg::from(temp.to_reg().to_real_reg().unwrap()))
         );
 
         for CallRetPair { vreg, location } in &self.defs {

@@ -74,6 +74,18 @@ pub enum CallConv {
     /// It supports tail calls to functions with the same convention and a stack argument area
     /// that fits in the one of the caller, as they reuse it.
     PreserveNone,
+    /// Calling convention matching LLVM's `preserve_most`, for interoperating with code that LLVM
+    /// compiled.
+    ///
+    /// Arguments and return values are passed as in the native C convention of the target, but the
+    /// callee preserves more registers, so that calls to it, usually to rarely executed code, cost
+    /// the caller little:
+    /// - x86-64: all general purpose registers except r11 (and the ones that return values)
+    /// - aarch64: x9 to x15 in addition to the registers the C convention preserves
+    ///
+    /// Vector registers are preserved as in the C convention. It is supported on x86-64 and
+    /// aarch64, and the other targets use the C convention.
+    PreserveMost,
 }
 
 impl CallConv {
@@ -86,6 +98,16 @@ impl CallConv {
             Ok(CallingConvention::AppleAarch64) => Self::AppleAarch64,
             Ok(CallingConvention::WindowsFastcall) => Self::WindowsFastcall,
             Ok(unimp) => unimplemented!("calling convention: {:?}", unimp),
+        }
+    }
+
+    /// Split `preserve_most` into the convention that decides where arguments and return values
+    /// go, the default one of the target, and whether the callee preserves more registers. Other
+    /// conventions are returned as they are.
+    pub fn split_preserve_most(self, default_call_conv: CallConv) -> (CallConv, bool) {
+        match self {
+            CallConv::PreserveMost => (default_call_conv, true),
+            call_conv => (call_conv, false),
         }
     }
 
@@ -111,6 +133,7 @@ impl CallConv {
         match self {
             CallConv::Tail
             | CallConv::PreserveNone
+            | CallConv::PreserveMost
             | CallConv::SystemV
             | CallConv::AppleAarch64
             | CallConv::WindowsFastcall => true,
@@ -131,6 +154,7 @@ impl CallConv {
             | CallConv::Winch
             | CallConv::PreserveAll
             | CallConv::PreserveNone
+            | CallConv::PreserveMost
             | CallConv::AppleAarch64 => true,
             _ => false,
         }
@@ -153,6 +177,7 @@ impl CallConv {
             | CallConv::SystemV
             | CallConv::PreserveAll
             | CallConv::PreserveNone
+            | CallConv::PreserveMost
             | CallConv::AppleAarch64 => match pointer_ty {
                 types::I32 => &[types::I32, types::I32],
                 types::I64 => &[types::I64, types::I64],
@@ -175,6 +200,7 @@ impl fmt::Display for CallConv {
             Self::Winch => "winch",
             Self::PreserveAll => "preserve_all",
             Self::PreserveNone => "preserve_none",
+            Self::PreserveMost => "preserve_most",
         })
     }
 }
@@ -192,6 +218,7 @@ impl str::FromStr for CallConv {
             "winch" => Ok(Self::Winch),
             "preserve_all" => Ok(Self::PreserveAll),
             "preserve_none" => Ok(Self::PreserveNone),
+            "preserve_most" => Ok(Self::PreserveMost),
             _ => Err(()),
         }
     }

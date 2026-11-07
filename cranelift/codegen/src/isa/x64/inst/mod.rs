@@ -53,6 +53,9 @@ pub struct ReturnCallInfo<T> {
 
     /// A temporary for use when moving the return address.
     pub tmp: WritableGpr,
+
+    /// Whether the caller has the `preserve_most` calling convention, which preserves `r10`.
+    pub preserve_most: bool,
 }
 
 #[test]
@@ -606,6 +609,7 @@ impl PrettyPrint for Inst {
                     new_stack_arg_size,
                     tmp,
                     dest,
+                    ..
                 } = &**info;
                 let tmp = pretty_print_reg(tmp.to_reg().to_reg(), 8);
                 let mut s = format!("return_call_known {dest:?} ({new_stack_arg_size}) tmp={tmp}");
@@ -623,6 +627,7 @@ impl PrettyPrint for Inst {
                     new_stack_arg_size,
                     tmp,
                     dest,
+                    ..
                 } = &**info;
                 let callee = pretty_print_reg(*dest, 8);
                 let tmp = pretty_print_reg(tmp.to_reg().to_reg(), 8);
@@ -1065,15 +1070,27 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
 
         Inst::ReturnCallUnknown { info } => {
             let ReturnCallInfo {
-                dest, uses, tmp, ..
+                dest,
+                uses,
+                tmp,
+                preserve_most,
+                ..
             } = &mut **info;
 
             // TODO(https://github.com/bytecodealliance/regalloc2/issues/145):
             // This shouldn't be a fixed register constraint, but it's not clear how to
             // pick a register that won't be clobbered by the callee-save restore code
             // emitted with a return_call_indirect. r10 is caller-saved, so this should be
-            // safe to use.
-            collector.reg_fixed_use(dest, regs::r10());
+            // safe to use, except in the `preserve_most` calling convention, which preserves
+            // it and where only `r11` is caller-saved.
+            collector.reg_fixed_use(
+                dest,
+                if *preserve_most {
+                    regs::r11()
+                } else {
+                    regs::r10()
+                },
+            );
 
             collector.reg_fixed_def(tmp, regs::r11());
             for CallArgPair { vreg, preg } in uses {
@@ -1185,7 +1202,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             // ELF systems; other x86-64 targets with other conventions (i.e.,
             // Windows) use different TLS strategies.
             let mut clobbers =
-                X64ABIMachineSpec::get_regs_clobbered_by_call(CallConv::SystemV, false);
+                X64ABIMachineSpec::get_regs_clobbered_by_call(CallConv::SystemV, false, false);
             clobbers.remove(regs::gpr_preg(asm::gpr::enc::RAX));
             collector.reg_clobbers(clobbers);
         }

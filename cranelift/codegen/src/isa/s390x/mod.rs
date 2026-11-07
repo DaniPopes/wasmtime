@@ -57,7 +57,11 @@ impl S390xBackend {
         ctrl_plane: &mut ControlPlane,
     ) -> CodegenResult<VCode<inst::Inst>> {
         let emit_info = EmitInfo::new(self.isa_flags.clone());
-        let sigs = SigSet::new::<abi::S390xMachineDeps>(func, &self.flags)?;
+        let sigs = SigSet::new::<abi::S390xMachineDeps>(
+            func,
+            &self.flags,
+            crate::isa::CallConv::triple_default(self.triple()),
+        )?;
         let abi = abi::S390xCallee::new(func, self, &self.isa_flags, &sigs)?;
         compile::compile::<S390xBackend>(
             func,

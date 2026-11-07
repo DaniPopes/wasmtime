@@ -928,6 +928,7 @@ impl ABIMachineSpec for S390xMachineDeps {
 
     fn get_regs_clobbered_by_call(
         call_conv_of_callee: isa::CallConv,
+        _preserve_most: bool,
         is_exception: bool,
     ) -> PRegSet {
         match call_conv_of_callee {
@@ -954,6 +955,7 @@ impl ABIMachineSpec for S390xMachineDeps {
 
     fn compute_frame_layout(
         call_conv: isa::CallConv,
+        _preserve_most: bool,
         flags: &settings::Flags,
         _sig: &Signature,
         regs: &[Writable<RealReg>],

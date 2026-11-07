@@ -72,7 +72,11 @@ impl Riscv64Backend {
         ctrl_plane: &mut ControlPlane,
     ) -> CodegenResult<VCode<inst::Inst>> {
         let emit_info = EmitInfo::new(self.flags.clone(), self.isa_flags.clone());
-        let sigs = SigSet::new::<abi::Riscv64MachineDeps>(func, &self.flags)?;
+        let sigs = SigSet::new::<abi::Riscv64MachineDeps>(
+            func,
+            &self.flags,
+            crate::isa::CallConv::triple_default(self.triple()),
+        )?;
         let abi = abi::Riscv64Callee::new(func, self, &self.isa_flags, &sigs)?;
         compile::compile::<Riscv64Backend>(
             func,

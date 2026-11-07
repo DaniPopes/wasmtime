@@ -141,6 +141,7 @@ impl Context for IsleContext<'_, '_, MInst, AArch64Backend> {
             uses,
             key,
             sign_return_address_all: self.backend.isa_flags.sign_return_address_all(),
+            preserve_most: self.lower_ctx.abi().preserve_most(),
             new_stack_arg_size,
         })
     }
@@ -170,6 +171,7 @@ impl Context for IsleContext<'_, '_, MInst, AArch64Backend> {
             uses,
             key,
             sign_return_address_all: self.backend.isa_flags.sign_return_address_all(),
+            preserve_most: self.lower_ctx.abi().preserve_most(),
             new_stack_arg_size,
         })
     }

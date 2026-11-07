@@ -100,6 +100,8 @@ pub struct ReturnCallInfo<T> {
     pub key: Option<APIKey>,
     /// Whether pointer-auth return addresses are signed even without frame setup.
     pub sign_return_address_all: bool,
+    /// Whether the caller has the `preserve_most` calling convention.
+    pub preserve_most: bool,
 }
 
 fn count_zero_half_words(mut value: u64, num_half_words: u8) -> usize {
@@ -893,9 +895,17 @@ fn aarch64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             //
             // Use the first of x1, x8 and x9 that doesn't pass an argument. The callee-save
             // restore code only touches x19 and higher, and the `preserve_none` convention
-            // passes arguments in x1 and x9, the C one an indirect return pointer in x8.
-            let dest = [xreg(1), xreg(8), xreg(9)]
-                .into_iter()
+            // passes arguments in x1 and x9, the C one an indirect return pointer in x8. The
+            // `preserve_most` convention preserves x9 and the other registers up to x15, so
+            // the candidates are the registers up to x8 that it doesn't preserve.
+            let candidates: &[u8] = if info.preserve_most {
+                &[1, 2, 3, 4, 5, 6, 7, 8]
+            } else {
+                &[1, 8, 9]
+            };
+            let dest = candidates
+                .iter()
+                .map(|&dest| xreg(dest))
                 .find(|&dest| info.uses.iter().all(|arg| arg.preg != dest))
                 .expect("a register for the callee of a tail call");
             collector.reg_fixed_use(&mut info.dest, dest);
@@ -958,8 +968,11 @@ fn aarch64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
         }
         Inst::MachOTlsGetAddr { rd, .. } => {
             collector.reg_fixed_def(rd, regs::xreg(0));
-            let mut clobbers =
-                AArch64MachineDeps::get_regs_clobbered_by_call(CallConv::AppleAarch64, false);
+            let mut clobbers = AArch64MachineDeps::get_regs_clobbered_by_call(
+                CallConv::AppleAarch64,
+                false,
+                false,
+            );
             clobbers.remove(regs::xreg_preg(0));
             collector.reg_clobbers(clobbers);
         }
@@ -1011,13 +1024,13 @@ impl MachInst for Inst {
         let (caller, callee, is_exception) = match self {
             Inst::Args { .. } => return false,
             Inst::Call { info } => (
-                info.caller_conv,
-                info.callee_conv,
+                (info.caller_conv, info.caller_preserve_most),
+                (info.callee_conv, info.callee_preserve_most),
                 info.try_call_info.is_some(),
             ),
             Inst::CallInd { info } => (
-                info.caller_conv,
-                info.callee_conv,
+                (info.caller_conv, info.caller_preserve_most),
+                (info.callee_conv, info.callee_preserve_most),
                 info.try_call_info.is_some(),
             ),
             _ => return true,
@@ -1034,8 +1047,10 @@ impl MachInst for Inst {
         //
         // See the note in [crate::isa::aarch64::abi::is_caller_save_reg] for
         // more information on this ABI-implementation hack.
-        let caller_clobbers = AArch64MachineDeps::get_regs_clobbered_by_call(caller, false);
-        let callee_clobbers = AArch64MachineDeps::get_regs_clobbered_by_call(callee, is_exception);
+        let caller_clobbers =
+            AArch64MachineDeps::get_regs_clobbered_by_call(caller.0, caller.1, false);
+        let callee_clobbers =
+            AArch64MachineDeps::get_regs_clobbered_by_call(callee.0, callee.1, is_exception);
 
         let mut all_clobbers = caller_clobbers;
         all_clobbers.union_from(callee_clobbers);

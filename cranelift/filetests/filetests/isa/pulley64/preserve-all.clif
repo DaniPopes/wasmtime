@@ -15,8 +15,8 @@ block0(v0: i64):
 ;   xmov x3, x0
 ;   xmov x1, x3
 ;   xmov x2, x3
-;   indirect_call x3, CallInfo { dest: XReg(p3i), uses: [CallArgPair { vreg: p0i, preg: p0i }, CallArgPair { vreg: p1i, preg: p1i }, CallArgPair { vreg: p2i, preg: p2i }, CallArgPair { vreg: p3i, preg: p3i }], defs: [], clobbers: PRegSet { bits: [0, 0, 0, 0] }, callee_conv: PreserveAll, caller_conv: SystemV, callee_pop_size: 0, try_call_info: None, patchable: false }
-;   indirect_call x3, CallInfo { dest: XReg(p3i), uses: [CallArgPair { vreg: p0i, preg: p0i }, CallArgPair { vreg: p1i, preg: p1i }, CallArgPair { vreg: p2i, preg: p2i }, CallArgPair { vreg: p3i, preg: p3i }], defs: [], clobbers: PRegSet { bits: [0, 0, 0, 0] }, callee_conv: PreserveAll, caller_conv: SystemV, callee_pop_size: 0, try_call_info: None, patchable: false }
+;   indirect_call x3, CallInfo { dest: XReg(p3i), uses: [CallArgPair { vreg: p0i, preg: p0i }, CallArgPair { vreg: p1i, preg: p1i }, CallArgPair { vreg: p2i, preg: p2i }, CallArgPair { vreg: p3i, preg: p3i }], defs: [], clobbers: PRegSet { bits: [0, 0, 0, 0] }, callee_conv: PreserveAll, caller_conv: SystemV, callee_preserve_most: false, caller_preserve_most: false, callee_pop_size: 0, try_call_info: None, patchable: false }
+;   indirect_call x3, CallInfo { dest: XReg(p3i), uses: [CallArgPair { vreg: p0i, preg: p0i }, CallArgPair { vreg: p1i, preg: p1i }, CallArgPair { vreg: p2i, preg: p2i }, CallArgPair { vreg: p3i, preg: p3i }], defs: [], clobbers: PRegSet { bits: [0, 0, 0, 0] }, callee_conv: PreserveAll, caller_conv: SystemV, callee_preserve_most: false, caller_preserve_most: false, callee_pop_size: 0, try_call_info: None, patchable: false }
 ;   pop_frame
 ;   ret
 ;
@@ -120,7 +120,7 @@ block0(v0: i64):
 ;   vstore128 sp+264, v30 // flags =  notrap aligned little
 ;   vstore128 sp+256, v31 // flags =  notrap aligned little
 ; block0:
-;   indirect_call_host CallInfo { dest: TestCase(%libcall), uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [65535, 4294967295, 4294967295, 0] }, callee_conv: SystemV, caller_conv: PreserveAll, callee_pop_size: 0, try_call_info: None, patchable: false }
+;   indirect_call_host CallInfo { dest: TestCase(%libcall), uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [65535, 4294967295, 4294967295, 0] }, callee_conv: SystemV, caller_conv: PreserveAll, callee_preserve_most: false, caller_preserve_most: false, callee_pop_size: 0, try_call_info: None, patchable: false }
 ;   x0 = xload64 sp+888 // flags = notrap aligned
 ;   x1 = xload64 sp+880 // flags = notrap aligned
 ;   x2 = xload64 sp+872 // flags = notrap aligned
@@ -380,7 +380,7 @@ block0(v0: i64):
 ; VCode:
 ;   push_frame
 ; block0:
-;   call CallInfo { dest: PulleyCall { name: TestCase(%f), args: [] }, uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [0, 0, 0, 0] }, callee_conv: PreserveAll, caller_conv: SystemV, callee_pop_size: 0, try_call_info: None, patchable: false }
+;   call CallInfo { dest: PulleyCall { name: TestCase(%f), args: [] }, uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [0, 0, 0, 0] }, callee_conv: PreserveAll, caller_conv: SystemV, callee_preserve_most: false, caller_preserve_most: false, callee_pop_size: 0, try_call_info: None, patchable: false }
 ;   pop_frame
 ;   ret
 ;
@@ -482,9 +482,9 @@ block0(v0: i64, v1: i64):
 ;   vstore128 sp+264, v31 // flags =  notrap aligned little
 ; block0:
 ;   xmov x16, x1
-;   indirect_call_host CallInfo { dest: TestCase(%host), uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [65535, 4294967295, 4294967295, 0] }, callee_conv: SystemV, caller_conv: PreserveAll, callee_pop_size: 0, try_call_info: None, patchable: false }
+;   indirect_call_host CallInfo { dest: TestCase(%host), uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [65535, 4294967295, 4294967295, 0] }, callee_conv: SystemV, caller_conv: PreserveAll, callee_preserve_most: false, caller_preserve_most: false, callee_pop_size: 0, try_call_info: None, patchable: false }
 ;   xmov x0, x16
-;   indirect_call_host CallInfo { dest: TestCase(%host), uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [65535, 4294967295, 4294967295, 0] }, callee_conv: SystemV, caller_conv: PreserveAll, callee_pop_size: 0, try_call_info: None, patchable: false }
+;   indirect_call_host CallInfo { dest: TestCase(%host), uses: [CallArgPair { vreg: p0i, preg: p0i }], defs: [], clobbers: PRegSet { bits: [65535, 4294967295, 4294967295, 0] }, callee_conv: SystemV, caller_conv: PreserveAll, callee_preserve_most: false, caller_preserve_most: false, callee_pop_size: 0, try_call_info: None, patchable: false }
 ;   x0 = xload64 sp+896 // flags = notrap aligned
 ;   x1 = xload64 sp+888 // flags = notrap aligned
 ;   x2 = xload64 sp+880 // flags = notrap aligned

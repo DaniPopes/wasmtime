@@ -1,0 +1,143 @@
+test compile precise-output
+set preserve_frame_pointers=true
+set unwind_info=false
+target aarch64
+
+;; A call to a `preserve_most` function keeps the values in x9 to x15, and the callee saves the
+;; registers it uses.
+function %caller(i64, i64, i64) -> i64 {
+    sig0 = (i64) preserve_most
+    fn0 = %callee sig0
+block0(v0: i64, v1: i64, v2: i64):
+    call fn0(v0)
+    v3 = iadd v0, v1
+    v4 = iadd v3, v2
+    return v4
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   mov x9, x2
+;   mov x10, x1
+;   load_ext_name_far x6, TestCase(%callee)+0
+;   mov x12, x0
+;   blr x6
+;   mov x1, x10
+;   add x7, x12, x1
+;   mov x2, x9
+;   add x0, x7, x2
+;   ldp fp, lr, [sp], #16
+;   ret
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   mov x9, x2
+;   mov x10, x1
+;   ldr x6, #0x18
+;   b #0x20
+;   udf #0 ; reloc_external Abs8 %callee 0
+;   udf #0
+;   mov x12, x0
+;   blr x6
+;   mov x1, x10
+;   add x7, x12, x1
+;   mov x2, x9
+;   add x0, x7, x2
+;   ldp x29, x30, [sp], #0x10
+;   ret
+
+function %callee(i64, i64) -> i64 preserve_most {
+    sig0 = (i64) -> i64 system_v
+    fn0 = %other sig0
+block0(v0: i64, v1: i64):
+    v2 = call fn0(v0)
+    v3 = iadd v2, v1
+    return v3
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+;   stp x15, x19, [sp, #-16]!
+;   stp x13, x14, [sp, #-16]!
+;   stp x11, x12, [sp, #-16]!
+;   stp x9, x10, [sp, #-16]!
+;   stp d14, d15, [sp, #-16]!
+;   stp d12, d13, [sp, #-16]!
+;   stp d10, d11, [sp, #-16]!
+;   stp d8, d9, [sp, #-16]!
+; block0:
+;   mov x19, x1
+;   load_ext_name_far x5, TestCase(%other)+0
+;   blr x5
+;   mov x1, x19
+;   add x0, x0, x1
+;   ldp d8, d9, [sp], #16
+;   ldp d10, d11, [sp], #16
+;   ldp d12, d13, [sp], #16
+;   ldp d14, d15, [sp], #16
+;   ldp x9, x10, [sp], #16
+;   ldp x11, x12, [sp], #16
+;   ldp x13, x14, [sp], #16
+;   ldp x15, x19, [sp], #16
+;   ldp fp, lr, [sp], #16
+;   ret
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+;   stp x15, x19, [sp, #-0x10]!
+;   stp x13, x14, [sp, #-0x10]!
+;   stp x11, x12, [sp, #-0x10]!
+;   stp x9, x10, [sp, #-0x10]!
+;   stp d14, d15, [sp, #-0x10]!
+;   stp d12, d13, [sp, #-0x10]!
+;   stp d10, d11, [sp, #-0x10]!
+;   stp d8, d9, [sp, #-0x10]!
+; block1: ; offset 0x28
+;   mov x19, x1
+;   ldr x5, #0x34
+;   b #0x3c
+;   udf #0 ; reloc_external Abs8 %other 0
+;   udf #0
+;   blr x5
+;   mov x1, x19
+;   add x0, x0, x1
+;   ldp d8, d9, [sp], #0x10
+;   ldp d10, d11, [sp], #0x10
+;   ldp d12, d13, [sp], #0x10
+;   ldp d14, d15, [sp], #0x10
+;   ldp x9, x10, [sp], #0x10
+;   ldp x11, x12, [sp], #0x10
+;   ldp x13, x14, [sp], #0x10
+;   ldp x15, x19, [sp], #0x10
+;   ldp x29, x30, [sp], #0x10
+;   ret
+
+;; A tail call jumps to a register that the callee-save restore code does not touch.
+function %tail_indirect(i64, i64) -> i64 preserve_most {
+    sig0 = (i64) -> i64 preserve_most
+block0(v0: i64, v1: i64):
+    return_call_indirect sig0, v1(v0)
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   return_call_ind x1 new_stack_arg_size:0 x0=x0
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   ldp x29, x30, [sp], #0x10
+;   br x1
+

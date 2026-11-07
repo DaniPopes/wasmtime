@@ -1271,8 +1271,10 @@ impl ABIMachineSpec for AArch64MachineDeps {
                     }
                 ],
                 defs: smallvec![],
-                clobbers: Self::get_regs_clobbered_by_call(call_conv, false),
+                clobbers: Self::get_regs_clobbered_by_call(call_conv, false, false),
                 caller_conv: call_conv,
+                caller_preserve_most: false,
+                callee_preserve_most: false,
                 callee_conv: call_conv,
                 callee_pop_size: 0,
                 try_call_info: None,
@@ -1306,7 +1308,14 @@ impl ABIMachineSpec for AArch64MachineDeps {
         }
     }
 
-    fn get_regs_clobbered_by_call(call_conv: isa::CallConv, is_exception: bool) -> PRegSet {
+    fn get_regs_clobbered_by_call(
+        call_conv: isa::CallConv,
+        preserve_most: bool,
+        is_exception: bool,
+    ) -> PRegSet {
+        if preserve_most {
+            return PRESERVE_MOST_CLOBBERS;
+        }
         match (call_conv, is_exception) {
             (isa::CallConv::Tail, true) => ALL_CLOBBERS,
             (isa::CallConv::Winch, true) => ALL_CLOBBERS,
@@ -1347,6 +1356,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
 
     fn compute_frame_layout(
         call_conv: isa::CallConv,
+        preserve_most: bool,
         flags: &settings::Flags,
         sig: &Signature,
         regs: &[Writable<RealReg>],
@@ -1361,7 +1371,13 @@ impl ABIMachineSpec for AArch64MachineDeps {
             .iter()
             .cloned()
             .filter(|r| {
-                is_reg_saved_in_prologue(call_conv, flags.enable_pinned_reg(), sig, r.to_reg())
+                is_reg_saved_in_prologue(
+                    call_conv,
+                    preserve_most,
+                    flags.enable_pinned_reg(),
+                    sig,
+                    r.to_reg(),
+                )
             })
             .collect();
 
@@ -1415,9 +1431,9 @@ impl ABIMachineSpec for AArch64MachineDeps {
     }
 
     fn retval_temp_reg(_call_conv_of_callee: isa::CallConv) -> Writable<Reg> {
-        // Use x9 as a temp if needed: clobbered, not a
-        // retval.
-        regs::writable_xreg(9)
+        // Use x8 as a temp if needed: clobbered by every convention, including `preserve_most`,
+        // and not a retval.
+        regs::writable_xreg(8)
     }
 
     fn exception_payload_regs(call_conv: isa::CallConv) -> &'static [Reg] {
@@ -1510,6 +1526,7 @@ impl AArch64MachineDeps {
 /// callee-save?
 fn is_reg_saved_in_prologue(
     call_conv: isa::CallConv,
+    preserve_most: bool,
     enable_pinned_reg: bool,
     sig: &Signature,
     r: RealReg,
@@ -1530,6 +1547,11 @@ fn is_reg_saved_in_prologue(
         .filter(|p| p.value_type.is_dynamic_vector())
         .count()
         != 0;
+
+    // The `preserve_most` convention also preserves x9 - x15.
+    if preserve_most && r.class() == RegClass::Int && (9..=15).contains(&r.hw_enc()) {
+        return true;
+    }
 
     match r.class() {
         RegClass::Int => {
@@ -1579,6 +1601,26 @@ fn alloc_preserve_none_int_arg(ty: Type, used: &mut u32) -> Option<Reg> {
     let idx = candidates.into_iter().find(|idx| *used & (1 << idx) == 0)?;
     *used |= 1 << idx;
     Some(xreg(PRESERVE_NONE_INT_ARG_REGS[idx]))
+}
+
+/// The registers a call to a `preserve_most` function clobbers: those of the native convention
+/// except x9 - x15.
+const fn preserve_most_clobbers() -> PRegSet {
+    let mut clobbers = PRegSet::empty();
+    let mut reg = 0;
+    while reg <= 17 {
+        if reg < 9 || reg > 15 {
+            clobbers = clobbers.with(xreg_preg(reg));
+        }
+        reg += 1;
+    }
+    // Same vector registers as the native convention.
+    let mut vreg = 0;
+    while vreg < 32 {
+        clobbers = clobbers.with(vreg_preg(vreg));
+        vreg += 1;
+    }
+    clobbers
 }
 
 const fn default_aapcs_clobbers() -> PRegSet {
@@ -1790,6 +1832,7 @@ const fn all_clobbers() -> PRegSet {
 }
 
 const DEFAULT_AAPCS_CLOBBERS: PRegSet = default_aapcs_clobbers();
+const PRESERVE_MOST_CLOBBERS: PRegSet = preserve_most_clobbers();
 const WINCH_CLOBBERS: PRegSet = winch_clobbers();
 const ALL_CLOBBERS: PRegSet = all_clobbers();
 const NO_CLOBBERS: PRegSet = PRegSet::empty();

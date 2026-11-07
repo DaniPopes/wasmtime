@@ -67,7 +67,11 @@ impl X64Backend {
         // This performs lowering to VCode, register-allocates the code, computes
         // block layout and finalizes branches. The result is ready for binary emission.
         let emit_info = EmitInfo::new(self.flags.clone(), self.x64_flags.clone());
-        let sigs = SigSet::new::<abi::X64ABIMachineSpec>(func, &self.flags)?;
+        let sigs = SigSet::new::<abi::X64ABIMachineSpec>(
+            func,
+            &self.flags,
+            crate::isa::CallConv::triple_default(self.triple()),
+        )?;
         let abi = abi::X64Callee::new(func, self, &self.x64_flags, &sigs)?;
         compile::compile::<Self>(
             func,
