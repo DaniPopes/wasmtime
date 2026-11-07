@@ -584,6 +584,13 @@ pub trait ABIMachineSpec {
         alloc_tmp: F,
     ) -> SmallVec<[Self::I; 8]>;
 
+    /// The number of bytes of stack arguments that a function with the `tailcc` convention pops.
+    /// `aligned` is the size of the arguments rounded up to the stack alignment, `unaligned` the
+    /// size without the rounding.
+    fn tailcc_stack_arg_size(aligned: u32, _unaligned: u32) -> u32 {
+        aligned
+    }
+
     /// Get the number of spillslots required for the given register-class.
     fn get_number_of_spillslots_for_value(
         rc: RegClass,
@@ -1008,6 +1015,31 @@ impl SigSet {
             ArgsAccumulator::new(&mut self.abi_args),
         )?;
         let args_end = u32::try_from(self.abi_args.len()).unwrap();
+
+        let sized_stack_arg_space = if sig.call_conv == isa::CallConv::Tailcc {
+            let start = usize::try_from(rets_end).unwrap();
+            let end = self.abi_args[start..]
+                .iter()
+                .map(|arg| match arg {
+                    ABIArg::Slots { slots, .. } => slots
+                        .iter()
+                        .map(|slot| match slot {
+                            ABIArgSlot::Reg { .. } => 0,
+                            ABIArgSlot::Stack { offset, ty, .. } => {
+                                *offset as u32 + ty.bytes().max(M::word_bytes())
+                            }
+                        })
+                        .max()
+                        .unwrap_or(0),
+                    ABIArg::StructArg { offset, size, .. } => *offset as u32 + *size as u32,
+                    ABIArg::ImplicitPtrArg { offset, .. } => *offset as u32 + 16,
+                })
+                .max()
+                .unwrap_or(0);
+            M::tailcc_stack_arg_size(sized_stack_arg_space, end)
+        } else {
+            sized_stack_arg_space
+        };
 
         // To avoid overflow issues, limit the arg size to something reasonable.
         if sized_stack_arg_space > M::STACK_ARG_RET_SIZE_LIMIT {

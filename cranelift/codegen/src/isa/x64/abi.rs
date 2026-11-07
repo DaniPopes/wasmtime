@@ -908,6 +908,13 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         insts
     }
 
+    fn tailcc_stack_arg_size(_aligned: u32, unaligned: u32) -> u32 {
+        // LLVM keeps the stack aligned at the call of a function with the `tailcc` convention by
+        // making the callee pop, in addition to the arguments, the padding that comes between them
+        // and the return address.
+        align_to(unaligned + 8, 16) - 8
+    }
+
     fn get_number_of_spillslots_for_value(
         rc: RegClass,
         vector_scale: u32,
@@ -1023,7 +1030,12 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         FrameLayout {
             word_bytes: 8,
             incoming_args_size,
-            tail_args_size: align_to(tail_args_size, 16),
+            // The `tailcc` convention keeps the area misaligned by the return address.
+            tail_args_size: if tail_args_size % 16 == 8 {
+                tail_args_size
+            } else {
+                align_to(tail_args_size, 16)
+            },
             setup_area_size,
             clobber_size,
             fixed_frame_storage_size,

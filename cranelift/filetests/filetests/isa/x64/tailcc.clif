@@ -15,13 +15,13 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64):
 ;   pushq %rbp
 ;   movq %rsp, %rbp
 ; block0:
-;   movq <offset:0>+-0x10(%rbp), %r9
-;   movq <offset:0>+-8(%rbp), %r8
+;   movq <offset:0>+-0x18(%rbp), %r9
+;   movq <offset:0>+-0x10(%rbp), %r8
 ;   leaq (%rdi, %r9), %rax
 ;   leaq (%rsi, %r8), %rdx
 ;   movq %rbp, %rsp
 ;   popq %rbp
-;   retq $0x10
+;   retq $0x18
 ;
 ; Disassembled:
 ; block0: ; offset 0x0
@@ -34,7 +34,7 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64):
 ;   leaq (%rsi, %r8), %rdx
 ;   movq %rbp, %rsp
 ;   popq %rbp
-;   retq $0x10
+;   retq $0x18
 
 ;; The struct return pointer is returned in rax.
 function %sret(i64 sret, i64) tailcc {
@@ -51,7 +51,7 @@ block0(v0: i64, v1: i64):
 ;   movq %rdi, %rax
 ;   movq %rbp, %rsp
 ;   popq %rbp
-;   retq
+;   retq $0x8
 ;
 ; Disassembled:
 ; block0: ; offset 0x0
@@ -62,7 +62,7 @@ block0(v0: i64, v1: i64):
 ;   movq %rdi, %rax
 ;   movq %rbp, %rsp
 ;   popq %rbp
-;   retq
+;   retq $8
 
 ;; A tail call can change the size of the arguments on the stack.
 function %tail(i64, i64, i64, i64, i64, i64, i64, i64) -> i64, i64 tailcc {
@@ -76,8 +76,8 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64):
 ;   pushq %rbp
 ;   movq %rsp, %rbp
 ; block0:
-;   movq <offset:0>+-8(%rbp), %rdi
-;   return_call_known TestCase(%callee) (0) tmp=%r11 %rdi=%rdi
+;   movq <offset:0>+-0x10(%rbp), %rdi
+;   return_call_known TestCase(%callee) (8) tmp=%r11 %rdi=%rdi
 ;
 ; Disassembled:
 ; block0: ; offset 0x0
