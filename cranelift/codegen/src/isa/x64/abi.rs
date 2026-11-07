@@ -388,6 +388,15 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                         ));
                     }
 
+                    // LLVM aligns an `i128` argument on the stack to 16 bytes in `preserve_none`.
+                    if call_conv == CallConv::PreserveNone
+                        && args_or_rets == ArgsOrRets::Args
+                        && param.value_type == types::I128
+                        && ix == 0
+                    {
+                        next_stack = align_to(next_stack, 16);
+                    }
+
                     let size = reg_ty.bytes();
                     let size = if call_conv == CallConv::Winch
                         && args_or_rets == ArgsOrRets::Rets

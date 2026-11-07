@@ -1,5 +1,6 @@
 test compile precise-output
 set preserve_frame_pointers=true
+set enable_llvm_abi_extensions=true
 target x86_64
 
 ;; The arguments are passed in r12, r13, r14, r15, rdi, rsi, rdx, rcx, r8, r9, r11 and rax, and
@@ -115,6 +116,45 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i8, v8
 ; block1: ; offset 0x4
 ;   movzbq %cl, %rsi
 ;   leaq (%r8, %rsi), %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+
+
+;; An `i128` on the stack is aligned to 16 bytes, which puts it after a padding slot.
+function %stack_i128(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i128, i64) -> i64 preserve_none {
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i64, v9: i64, v10: i64, v11: i64, v12: i64, v13: i128, v14: i64):
+    v15 = ireduce.i64 v13
+    v16 = iadd v12, v15
+    v17 = iadd v16, v14
+    return v17
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq <offset:0>+-0x30(%rbp), %rax
+;   movq <offset:0>+-0x20(%rbp), %rdx
+;   movq <offset:0>+-0x18(%rbp), %rsi
+;   movq <offset:0>+-0x10(%rbp), %rsi
+;   leaq (%rax, %rdx), %r9
+;   leaq (%r9, %rsi), %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq 0x10(%rbp), %rax
+;   movq 0x20(%rbp), %rdx
+;   movq 0x28(%rbp), %rsi
+;   movq 0x30(%rbp), %rsi
+;   leaq (%rax, %rdx), %r9
+;   leaq (%r9, %rsi), %rax
 ;   movq %rbp, %rsp
 ;   popq %rbp
 ;   retq
