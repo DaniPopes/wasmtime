@@ -336,7 +336,10 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
         dest: ExternalName,
         uses: CallArgList,
     ) -> BoxReturnCallInfo {
-        let new_stack_arg_size = self.lower_ctx.sigs()[sig].sized_stack_arg_space();
+        let new_stack_arg_size = self
+            .lower_ctx
+            .abi()
+            .tail_call_stack_arg_size(self.lower_ctx.sigs(), sig);
         self.lower_ctx
             .abi_mut()
             .accumulate_tail_args_size(new_stack_arg_size);
@@ -355,7 +358,10 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
         dest: Reg,
         uses: CallArgList,
     ) -> BoxReturnCallIndInfo {
-        let new_stack_arg_size = self.lower_ctx.sigs()[sig].sized_stack_arg_space();
+        let new_stack_arg_size = self
+            .lower_ctx
+            .abi()
+            .tail_call_stack_arg_size(self.lower_ctx.sigs(), sig);
         self.lower_ctx
             .abi_mut()
             .accumulate_tail_args_size(new_stack_arg_size);

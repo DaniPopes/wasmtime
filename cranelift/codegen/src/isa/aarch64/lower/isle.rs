@@ -13,7 +13,6 @@ use super::{
     writable_link_reg, writable_zero_reg, zero_reg,
 };
 use crate::ir::{ArgumentExtension, condcodes};
-use crate::isa;
 use crate::isa::aarch64::AArch64Backend;
 use crate::isa::aarch64::inst::{FPULeftShiftImm, FPURightShiftImm, ReturnCallInfo};
 use crate::machinst::isle::*;
@@ -123,13 +122,19 @@ impl Context for IsleContext<'_, '_, MInst, AArch64Backend> {
         dest: ExternalName,
         uses: CallArgList,
     ) -> BoxReturnCallInfo {
-        let new_stack_arg_size = self.lower_ctx.sigs()[sig].sized_stack_arg_space();
+        let new_stack_arg_size = self
+            .lower_ctx
+            .abi()
+            .tail_call_stack_arg_size(self.lower_ctx.sigs(), sig);
         self.lower_ctx
             .abi_mut()
             .accumulate_tail_args_size(new_stack_arg_size);
 
-        let key =
-            AArch64MachineDeps::select_api_key(&self.backend.isa_flags, isa::CallConv::Tail, true);
+        let key = AArch64MachineDeps::select_api_key(
+            &self.backend.isa_flags,
+            self.lower_ctx.abi().call_conv(),
+            true,
+        );
 
         Box::new(ReturnCallInfo {
             dest,
@@ -146,13 +151,19 @@ impl Context for IsleContext<'_, '_, MInst, AArch64Backend> {
         dest: Reg,
         uses: CallArgList,
     ) -> BoxReturnCallIndInfo {
-        let new_stack_arg_size = self.lower_ctx.sigs()[sig].sized_stack_arg_space();
+        let new_stack_arg_size = self
+            .lower_ctx
+            .abi()
+            .tail_call_stack_arg_size(self.lower_ctx.sigs(), sig);
         self.lower_ctx
             .abi_mut()
             .accumulate_tail_args_size(new_stack_arg_size);
 
-        let key =
-            AArch64MachineDeps::select_api_key(&self.backend.isa_flags, isa::CallConv::Tail, true);
+        let key = AArch64MachineDeps::select_api_key(
+            &self.backend.isa_flags,
+            self.lower_ctx.abi().call_conv(),
+            true,
+        );
 
         Box::new(ReturnCallInfo {
             dest,
