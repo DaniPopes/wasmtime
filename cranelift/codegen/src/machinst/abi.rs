@@ -2352,18 +2352,21 @@ impl<M: ABIMachineSpec> Callee<M> {
 
             if self.flags.enable_probestack() {
                 let guard_size = 1 << self.flags.probestack_size_log2();
-                match self.flags.probestack_strategy() {
-                    ProbestackStrategy::Inline => M::gen_inline_probestack(
+                // The outline probestack function takes the frame size in a register that the
+                // `preserve_none` convention uses to pass an argument, which is still live here.
+                let outline = self.flags.probestack_strategy() == ProbestackStrategy::Outline
+                    && self.call_conv != isa::CallConv::PreserveNone;
+                if outline {
+                    if total_stacksize >= guard_size {
+                        M::gen_probestack(&mut insts, total_stacksize);
+                    }
+                } else {
+                    M::gen_inline_probestack(
                         &mut insts,
                         self.call_conv,
                         total_stacksize,
                         guard_size,
-                    ),
-                    ProbestackStrategy::Outline => {
-                        if total_stacksize >= guard_size {
-                            M::gen_probestack(&mut insts, total_stacksize);
-                        }
-                    }
+                    );
                 }
             }
         }

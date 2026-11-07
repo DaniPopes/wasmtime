@@ -64,3 +64,58 @@ block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v
 ;   popq %rbp
 ;   jmp 0x18 ; reloc_external CallPCRel4 %args -4
 
+
+;; Integers smaller than 32 bits are promoted and use the registers of the C convention, which
+;; come after the first four ones, but are shared with the other arguments.
+function %small(i8, i16, i64, i32, i8) -> i16 preserve_none {
+block0(v0: i8, v1: i16, v2: i64, v3: i32, v4: i8):
+    return v1
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq %rsi, %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq %rsi, %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+
+function %small_late(i64, i64, i64, i64, i64, i64, i64, i8, i64) -> i64 preserve_none {
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i8, v8: i64):
+    v9 = uextend.i64 v7
+    v10 = iadd v8, v9
+    return v10
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movzbq %cl, %rsi
+;   leaq (%r8, %rsi), %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movzbq %cl, %rsi
+;   leaq (%r8, %rsi), %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+

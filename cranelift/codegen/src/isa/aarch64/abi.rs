@@ -199,16 +199,20 @@ impl ABIMachineSpec for AArch64MachineDeps {
         // 8 vector registers at once.
         let max_per_class_reg_vals = 8; // x0-x7 and v0-v7
 
-        // The `preserve_none` convention passes the arguments in many more integer registers.
+        let mut remaining_reg_vals = 16;
+
+        // The `preserve_none` convention passes integer arguments in many more registers, which
+        // are tracked in `preserve_none_used_xregs` instead of `next_xreg`.
         let preserve_none =
             call_conv == isa::CallConv::PreserveNone && args_or_rets == ArgsOrRets::Args;
-        let max_int_reg_vals = if preserve_none {
-            PRESERVE_NONE_INT_ARG_REGS.len() as u8
-        } else {
-            max_per_class_reg_vals
-        };
-        let mut remaining_reg_vals =
-            i32::from(max_int_reg_vals) + i32::from(max_per_class_reg_vals);
+        let mut preserve_none_used_xregs = 0u32;
+        if preserve_none && flags.enable_pinned_reg() {
+            // The pinned register is an argument register.
+            return Err(crate::CodegenError::Unsupported(
+                "the `preserve_none` calling convention does not support a pinned register"
+                    .to_owned(),
+            ));
+        }
 
         let ret_area_ptr = if add_ret_area_ptr {
             debug_assert_eq!(args_or_rets, ArgsOrRets::Args);
@@ -242,6 +246,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
 
         for (i, param) in params.into_iter().enumerate() {
             if args_or_rets == ArgsOrRets::Args
+                && !preserve_none
                 && let ir::ArgumentPurpose::AggregateStart(count, align) = param.purpose
             {
                 // An aggregate is passed either entirely in registers or entirely on the stack.
@@ -250,7 +255,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 // of the AAPCS64).
                 let end = i + count as usize;
                 let (ints, floats) = aggregate_register_counts::<Inst>(&params[i..end])?;
-                let fits = usize::from(next_xreg) + ints <= usize::from(max_int_reg_vals)
+                let fits = usize::from(next_xreg) + ints <= usize::from(max_per_class_reg_vals)
                     && usize::from(next_vreg) + floats <= usize::from(max_per_class_reg_vals)
                     && i32::try_from(ints + floats).is_ok_and(|n| n <= remaining_reg_vals);
                 if !fits {
@@ -261,7 +266,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
                     next_stack =
                         align_to(next_stack, if is_apple_cc { align } else { align.max(8) });
                     if ints > 0 {
-                        next_xreg = max_int_reg_vals;
+                        next_xreg = max_per_class_reg_vals;
                     }
                     if floats > 0 {
                         next_vreg = max_per_class_reg_vals;
@@ -337,15 +342,14 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 // register and the other on the stack, and there is no even register rule.
                 let mut slots = ABIArgSlotVec::new();
                 for (part, ty) in reg_types.iter().enumerate() {
-                    if next_xreg < max_int_reg_vals {
-                        let reg = xreg(PRESERVE_NONE_INT_ARG_REGS[usize::from(next_xreg)]);
+                    if let Some(reg) =
+                        alloc_preserve_none_int_arg(*ty, &mut preserve_none_used_xregs)
+                    {
                         slots.push(ABIArgSlot::Reg {
                             reg: reg.to_real_reg().unwrap(),
                             ty: *ty,
                             extension: param.extension,
                         });
-                        next_xreg += 1;
-                        remaining_reg_vals -= 1;
                     } else {
                         if part == 0 {
                             // The whole value is on the stack, and the first half is aligned to 16.
@@ -417,11 +421,24 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 // shadows `x7`), so later integer arguments go on the stack
                 // too.
                 if args_or_rets == ArgsOrRets::Args {
-                    next_xreg = max_int_reg_vals;
+                    next_xreg = max_per_class_reg_vals;
                 }
             } else {
                 // Single Register parameters
                 let rc = rcs[0];
+                if preserve_none
+                    && rc == RegClass::Int
+                    && let Some(reg) =
+                        alloc_preserve_none_int_arg(param.value_type, &mut preserve_none_used_xregs)
+                {
+                    args.push(ABIArg::reg(
+                        reg.to_real_reg().unwrap(),
+                        param.value_type,
+                        param.extension,
+                        param.purpose,
+                    ));
+                    continue;
+                }
                 let next_reg = match rc {
                     RegClass::Int => &mut next_xreg,
                     RegClass::Float => &mut next_vreg,
@@ -434,20 +451,13 @@ impl ABIMachineSpec for AArch64MachineDeps {
                 } else {
                     // Use max_per_class_reg_vals & remaining_reg_vals otherwise
                     i >= aggregate_on_stack_until
-                        && *next_reg
-                            < if rc == RegClass::Int {
-                                max_int_reg_vals
-                            } else {
-                                max_per_class_reg_vals
-                            }
+                        && !(preserve_none && rc == RegClass::Int)
+                        && *next_reg < max_per_class_reg_vals
                         && remaining_reg_vals > 0
                 };
 
                 if push_to_reg {
                     let reg = match rc {
-                        RegClass::Int if preserve_none => {
-                            xreg(PRESERVE_NONE_INT_ARG_REGS[usize::from(*next_reg)])
-                        }
                         RegClass::Int => xreg(*next_reg),
                         RegClass::Float => vreg(*next_reg),
                         RegClass::Vector => unreachable!(),
@@ -1546,11 +1556,26 @@ fn is_reg_saved_in_prologue(
     }
 }
 
-/// The integer argument registers of the `preserve_none` calling convention, in order, like
-/// LLVM's: the registers that other conventions preserve come first.
+/// The integer argument registers of the `preserve_none` calling convention, in LLVM's order: the
+/// registers that other conventions preserve come first.
 const PRESERVE_NONE_INT_ARG_REGS: [u8; 24] = [
     20, 21, 22, 23, 24, 25, 26, 27, 28, 0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 9, 15,
 ];
+
+/// Assigns the next integer argument of the `preserve_none` calling convention to a register, and
+/// marks it in `used`. Like in LLVM only 32 and 64 bit integers take the first free register of
+/// the list above. Smaller ones are promoted and use the first free register of the C convention,
+/// which is `x0` to `x7`.
+fn alloc_preserve_none_int_arg(ty: Type, used: &mut u32) -> Option<Reg> {
+    let candidates = if ty.bits() < 32 {
+        9..17
+    } else {
+        0..PRESERVE_NONE_INT_ARG_REGS.len()
+    };
+    let idx = candidates.into_iter().find(|idx| *used & (1 << idx) == 0)?;
+    *used |= 1 << idx;
+    Some(xreg(PRESERVE_NONE_INT_ARG_REGS[idx]))
+}
 
 const fn default_aapcs_clobbers() -> PRegSet {
     PRegSet::empty()

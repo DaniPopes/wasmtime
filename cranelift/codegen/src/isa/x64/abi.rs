@@ -46,7 +46,7 @@ impl X64ABIMachineSpec {
 
     fn gen_probestack_loop(
         insts: &mut SmallInstVec<Inst>,
-        _call_conv: isa::CallConv,
+        call_conv: isa::CallConv,
         frame_size: u32,
         guard_size: u32,
     ) {
@@ -54,8 +54,13 @@ impl X64ABIMachineSpec {
         // happens after stack probing.
         // `r11` is caller saved on both Fastcall and SystemV, and not used
         // for argument passing, so it's pretty much free. It is also not
-        // used by the stacklimit mechanism.
-        let tmp = regs::r11();
+        // used by the stacklimit mechanism. The `preserve_none` convention passes
+        // an argument in `r11`, but not in `r10`.
+        let tmp = if call_conv == isa::CallConv::PreserveNone {
+            regs::r10()
+        } else {
+            regs::r11()
+        };
         debug_assert!({
             let real_reg = tmp.to_real_reg().unwrap();
             !is_callee_save_systemv(real_reg, false) && !is_callee_save_fastcall(real_reg, false)
@@ -105,6 +110,16 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         let mut next_vreg = 0;
         let mut next_stack: u32 = 0;
         let mut next_param_idx = 0; // Fastcall cares about overall param index
+        // The registers of `PRESERVE_NONE_INT_ARG_REGS` that are in use.
+        let mut preserve_none_used_gprs = 0u16;
+
+        if call_conv == CallConv::PreserveNone && flags.enable_pinned_reg() {
+            // The pinned register is an argument register.
+            return Err(crate::CodegenError::Unsupported(
+                "the `preserve_none` calling convention does not support a pinned register"
+                    .to_owned(),
+            ));
+        }
 
         if args_or_rets == ArgsOrRets::Args && is_fastcall {
             // Fastcall always reserves 32 bytes of shadow space corresponding to
@@ -120,12 +135,15 @@ impl ABIMachineSpec for X64ABIMachineSpec {
             next_gpr += 1;
             next_param_idx += 1;
             // In the SystemV and WindowsFastcall ABIs, the return area pointer is the first
-            // argument. For the Tail and Winch ABIs we do the same for simplicity sake.
-            Some(ABIArg::reg(
+            // argument. For the Tail, Winch and PreserveNone ABIs we do the same for simplicity
+            // sake.
+            let reg = if call_conv == CallConv::PreserveNone {
+                alloc_preserve_none_int_arg(types::I64, &mut preserve_none_used_gprs)
+            } else {
                 get_intreg_for_arg(call_conv, 0, 0)
-                    .unwrap()
-                    .to_real_reg()
-                    .unwrap(),
+            };
+            Some(ABIArg::reg(
+                reg.unwrap().to_real_reg().unwrap(),
                 types::I64,
                 ir::ArgumentExtension::None,
                 ir::ArgumentPurpose::Normal,
@@ -319,6 +337,9 @@ impl ABIMachineSpec for X64ABIMachineSpec {
                 let intreg = *rc == RegClass::Int;
                 let nextreg = if intreg {
                     match args_or_rets {
+                        ArgsOrRets::Args if call_conv == CallConv::PreserveNone => {
+                            alloc_preserve_none_int_arg(*reg_ty, &mut preserve_none_used_gprs)
+                        }
                         ArgsOrRets::Args => get_intreg_for_arg(call_conv, next_gpr, next_param_idx),
                         ArgsOrRets::Rets => {
                             get_intreg_for_retval(call_conv, flags, next_gpr, last_slot)
@@ -1025,27 +1046,40 @@ impl From<StackAMode> for SyntheticAmode {
     }
 }
 
-fn get_intreg_for_arg(call_conv: CallConv, idx: usize, arg_idx: usize) -> Option<Reg> {
-    if call_conv == CallConv::PreserveNone {
-        // Like LLVM's `preserve_none`: registers that other conventions preserve come first, so
-        // that functions calling them do not have to save the incoming arguments.
-        return match idx {
-            0 => Some(regs::r12()),
-            1 => Some(regs::r13()),
-            2 => Some(regs::r14()),
-            3 => Some(regs::r15()),
-            4 => Some(regs::rdi()),
-            5 => Some(regs::rsi()),
-            6 => Some(regs::rdx()),
-            7 => Some(regs::rcx()),
-            8 => Some(regs::r8()),
-            9 => Some(regs::r9()),
-            10 => Some(regs::r11()),
-            11 => Some(regs::rax()),
-            _ => None,
-        };
-    }
+/// The integer argument registers of the `preserve_none` calling convention, in LLVM's order: the
+/// registers that other conventions preserve come first, so that functions calling them do not
+/// have to save the incoming arguments.
+const PRESERVE_NONE_INT_ARG_REGS: [fn() -> Reg; 12] = [
+    regs::r12,
+    regs::r13,
+    regs::r14,
+    regs::r15,
+    regs::rdi,
+    regs::rsi,
+    regs::rdx,
+    regs::rcx,
+    regs::r8,
+    regs::r9,
+    regs::r11,
+    regs::rax,
+];
 
+/// Assigns the next integer argument of the `preserve_none` calling convention to a register, and
+/// marks it in `used`. Like in LLVM only 32 and 64 bit integers take the first free register of
+/// the list above. Smaller ones are promoted and use the first free register of the C convention,
+/// which is the sublist from `rdi` to `r9`.
+fn alloc_preserve_none_int_arg(ty: Type, used: &mut u16) -> Option<Reg> {
+    let candidates = if ty.bits() < 32 {
+        4..10
+    } else {
+        0..PRESERVE_NONE_INT_ARG_REGS.len()
+    };
+    let idx = candidates.into_iter().find(|idx| *used & (1 << idx) == 0)?;
+    *used |= 1 << idx;
+    Some(PRESERVE_NONE_INT_ARG_REGS[idx]())
+}
+
+fn get_intreg_for_arg(call_conv: CallConv, idx: usize, arg_idx: usize) -> Option<Reg> {
     let is_fastcall = call_conv == CallConv::WindowsFastcall;
 
     // Fastcall counts by absolute argument number; SysV counts by argument of
