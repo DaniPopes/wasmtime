@@ -593,6 +593,7 @@ where
             | isa::CallConv::Probestack
             | isa::CallConv::PreserveNone
             | isa::CallConv::PreserveMost
+            | isa::CallConv::Tailcc
             | isa::CallConv::Winch => &[],
         }
     }

@@ -1,0 +1,94 @@
+test compile precise-output
+set preserve_frame_pointers=true
+target x86_64
+
+;; Arguments and return values are where the System V convention puts them, and the callee pops
+;; the stack arguments.
+function %args(i64, i64, i64, i64, i64, i64, i64, i64) -> i64, i64 tailcc {
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64):
+    v8 = iadd v0, v6
+    v9 = iadd v1, v7
+    return v8, v9
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq <offset:0>+-0x10(%rbp), %r9
+;   movq <offset:0>+-8(%rbp), %r8
+;   leaq (%rdi, %r9), %rax
+;   leaq (%rsi, %r8), %rdx
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq $0x10
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq 0x10(%rbp), %r9
+;   movq 0x18(%rbp), %r8
+;   leaq (%rdi, %r9), %rax
+;   leaq (%rsi, %r8), %rdx
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq $0x10
+
+;; The struct return pointer is returned in rax.
+function %sret(i64 sret, i64) tailcc {
+block0(v0: i64, v1: i64):
+    store v1, v0
+    return
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq %rsi, (%rdi)
+;   movq %rdi, %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq %rsi, (%rdi) ; trap: heap_oob
+;   movq %rdi, %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
+
+;; A tail call can change the size of the arguments on the stack.
+function %tail(i64, i64, i64, i64, i64, i64, i64, i64) -> i64, i64 tailcc {
+    sig0 = (i64) -> i64, i64 tailcc
+    fn0 = colocated %callee sig0
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64):
+    return_call fn0(v7)
+}
+
+; VCode:
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block0:
+;   movq <offset:0>+-8(%rbp), %rdi
+;   return_call_known TestCase(%callee) (0) tmp=%r11 %rdi=%rdi
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq 0x18(%rbp), %rdi
+;   movq %rbp, %rsp
+;   popq %rbp
+;   movq (%rsp), %r11
+;   movq %r11, 0x10(%rsp)
+;   addq $0x10, %rsp
+;   jmp 0x1e ; reloc_external CallPCRel4 %callee -4
+

@@ -1,0 +1,88 @@
+test compile precise-output
+set preserve_frame_pointers=true
+set unwind_info=false
+target aarch64
+
+;; Arguments and return values are where the native convention puts them, starting at x0, and the
+;; callee pops the stack arguments.
+function %args(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 tailcc {
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i64, v9: i64):
+    v10 = iadd v0, v9
+    v11 = iadd v10, v8
+    return v11
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   ldr x2, [sp, #16]
+;   ldr x4, [sp, #24]
+;   add x7, x0, x4
+;   add x0, x7, x2
+;   ldp fp, lr, [sp], #16
+;   add sp, sp, #16
+;   ret
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   ldur x2, [sp, #0x10]
+;   ldur x4, [sp, #0x18]
+;   add x7, x0, x4
+;   add x0, x7, x2
+;   ldp x29, x30, [sp], #0x10
+;   add sp, sp, #0x10
+;   ret
+
+;; The struct return pointer is in x8.
+function %sret(i64 sret, i64) tailcc {
+block0(v0: i64, v1: i64):
+    store v1, v0
+    return
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   str x0, [x8]
+;   ldp fp, lr, [sp], #16
+;   ret
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   str x0, [x8] ; trap: heap_oob
+;   ldp x29, x30, [sp], #0x10
+;   ret
+
+;; A tail call can change the size of the arguments on the stack.
+function %tail(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 tailcc {
+    sig0 = (i64) -> i64 tailcc
+    fn0 = colocated %callee sig0
+block0(v0: i64, v1: i64, v2: i64, v3: i64, v4: i64, v5: i64, v6: i64, v7: i64, v8: i64, v9: i64):
+    return_call fn0(v9)
+}
+
+; VCode:
+;   stp fp, lr, [sp, #-16]!
+;   mov fp, sp
+; block0:
+;   ldr x0, [sp, #24]
+;   return_call TestCase(%callee) new_stack_arg_size:0 x0=x0
+;
+; Disassembled:
+; block0: ; offset 0x0
+;   stp x29, x30, [sp, #-0x10]!
+;   mov x29, sp
+; block1: ; offset 0x8
+;   ldur x0, [sp, #0x18]
+;   ldp x29, x30, [sp], #0x10
+;   add sp, sp, #0x10
+;   b #0x14 ; reloc_external Call %callee 0
+

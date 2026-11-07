@@ -86,6 +86,27 @@ pub enum CallConv {
     /// Vector registers are preserved as in the C convention. It is supported on x86-64 and
     /// aarch64, and the other targets use the C convention.
     PreserveMost,
+    /// Calling convention matching LLVM's `tailcc`, for interoperating with code that LLVM
+    /// compiled.
+    ///
+    /// It supports tail calls like `tail` does: callees pop their stack arguments, and a tail call
+    /// can change the size of the argument area. Unlike `tail`, it passes arguments and return
+    /// values as the native convention of the target does, including the struct return pointer.
+    /// It is supported on x86-64 and aarch64, but not with the Windows convention of x86-64, where
+    /// it preserves the registers of the System V convention.
+    Tailcc,
+}
+
+/// A calling convention split into what Cranelift implements it with, see
+/// [`CallConv::split`].
+#[derive(Debug, Copy, Clone)]
+pub struct SplitCallConv {
+    /// The convention that decides how the stack is managed and which registers are clobbered.
+    pub call_conv: CallConv,
+    /// The convention that decides where arguments and return values are.
+    pub layout_conv: CallConv,
+    /// Whether the callee preserves more registers than `call_conv` says.
+    pub preserve_most: bool,
 }
 
 impl CallConv {
@@ -101,13 +122,29 @@ impl CallConv {
         }
     }
 
-    /// Split `preserve_most` into the convention that decides where arguments and return values
-    /// go, the default one of the target, and whether the callee preserves more registers. Other
-    /// conventions are returned as they are.
-    pub fn split_preserve_most(self, default_call_conv: CallConv) -> (CallConv, bool) {
+    /// Split `preserve_most` and `tailcc` into the conventions that Cranelift implements them
+    /// with, given the default convention of the target.
+    ///
+    /// `preserve_most` is the default convention with a callee that preserves more registers.
+    /// `tailcc` is `tail` with the argument and return value locations of the default convention.
+    /// Other conventions are returned as they are.
+    pub fn split(self, default_call_conv: CallConv) -> SplitCallConv {
         match self {
-            CallConv::PreserveMost => (default_call_conv, true),
-            call_conv => (call_conv, false),
+            CallConv::PreserveMost => SplitCallConv {
+                call_conv: default_call_conv,
+                layout_conv: default_call_conv,
+                preserve_most: true,
+            },
+            CallConv::Tailcc => SplitCallConv {
+                call_conv: CallConv::Tail,
+                layout_conv: default_call_conv,
+                preserve_most: false,
+            },
+            call_conv => SplitCallConv {
+                call_conv,
+                layout_conv: call_conv,
+                preserve_most: false,
+            },
         }
     }
 
@@ -132,6 +169,7 @@ impl CallConv {
     pub fn supports_tail_calls(&self) -> bool {
         match self {
             CallConv::Tail
+            | CallConv::Tailcc
             | CallConv::PreserveNone
             | CallConv::PreserveMost
             | CallConv::SystemV
@@ -155,6 +193,7 @@ impl CallConv {
             | CallConv::PreserveAll
             | CallConv::PreserveNone
             | CallConv::PreserveMost
+            | CallConv::Tailcc
             | CallConv::AppleAarch64 => true,
             _ => false,
         }
@@ -178,6 +217,7 @@ impl CallConv {
             | CallConv::PreserveAll
             | CallConv::PreserveNone
             | CallConv::PreserveMost
+            | CallConv::Tailcc
             | CallConv::AppleAarch64 => match pointer_ty {
                 types::I32 => &[types::I32, types::I32],
                 types::I64 => &[types::I64, types::I64],
@@ -201,6 +241,7 @@ impl fmt::Display for CallConv {
             Self::PreserveAll => "preserve_all",
             Self::PreserveNone => "preserve_none",
             Self::PreserveMost => "preserve_most",
+            Self::Tailcc => "tailcc",
         })
     }
 }
@@ -219,6 +260,7 @@ impl str::FromStr for CallConv {
             "preserve_all" => Ok(Self::PreserveAll),
             "preserve_none" => Ok(Self::PreserveNone),
             "preserve_most" => Ok(Self::PreserveMost),
+            "tailcc" => Ok(Self::Tailcc),
             _ => Err(()),
         }
     }

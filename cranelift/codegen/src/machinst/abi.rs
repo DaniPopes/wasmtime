@@ -766,8 +766,13 @@ pub struct SigData {
     /// Index in `args` of the stack-return-value-area argument.
     stack_ret_arg: Option<u16>,
 
-    /// Calling convention used. For `preserve_most` this is the one of the target.
+    /// Calling convention used. For `preserve_most` this is the one of the target, and for
+    /// `tailcc` it is `tail`.
     call_conv: isa::CallConv,
+
+    /// The calling convention that decides where arguments and return values are. It is
+    /// `call_conv`, except for `tailcc`, where it is the one of the target.
+    layout_conv: isa::CallConv,
 
     /// Whether the calling convention is `preserve_most`.
     preserve_most: bool,
@@ -787,6 +792,11 @@ impl SigData {
     /// Get calling convention used.
     pub fn call_conv(&self) -> isa::CallConv {
         self.call_conv
+    }
+
+    /// Get the calling convention that decides where arguments and return values are.
+    pub fn layout_conv(&self) -> isa::CallConv {
+        self.layout_conv
     }
 
     /// Whether the callee preserves more registers than the calling convention says, as in the
@@ -948,7 +958,17 @@ impl SigSet {
             sig.returns.as_slice()
         };
 
-        let (call_conv, preserve_most) = sig.call_conv.split_preserve_most(self.default_call_conv);
+        let isa::SplitCallConv {
+            call_conv,
+            layout_conv,
+            preserve_most,
+        } = sig.call_conv.split(self.default_call_conv);
+
+        if sig.call_conv == isa::CallConv::Tailcc && layout_conv == isa::CallConv::WindowsFastcall {
+            return Err(CodegenError::Unsupported(alloc::string::String::from(
+                "the `tailcc` calling convention is not supported with the Windows convention",
+            )));
+        }
 
         // Compute args and retvals from signature. Handle retvals first,
         // because we may need to add a return-area arg to the args.
@@ -957,7 +977,7 @@ impl SigSet {
         // `SigSet::args()` and `SigSet::rets()`. Therefore, we cannot change the two
         // compute_arg_locs order.
         let (sized_stack_ret_space, _) = M::compute_arg_locs(
-            call_conv,
+            layout_conv,
             flags,
             &returns,
             ArgsOrRets::Rets,
@@ -980,7 +1000,7 @@ impl SigSet {
         }
 
         let (sized_stack_arg_space, stack_ret_arg) = M::compute_arg_locs(
-            call_conv,
+            layout_conv,
             flags,
             &sig.params,
             ArgsOrRets::Args,
@@ -1013,6 +1033,7 @@ impl SigSet {
             sized_stack_ret_space,
             stack_ret_arg,
             call_conv,
+            layout_conv,
             preserve_most,
         })
     }
@@ -1668,8 +1689,11 @@ impl<M: ABIMachineSpec> Callee<M> {
                 } => {
                     // However, we have to respect the extension mode for stack
                     // slots, or else we grab the wrong bytes on big-endian.
-                    let ext =
-                        M::get_ext_mode(sigs[self.sig].call_conv, extension, ABIArgLocation::Stack);
+                    let ext = M::get_ext_mode(
+                        sigs[self.sig].layout_conv,
+                        extension,
+                        ABIArgLocation::Stack,
+                    );
                     let ty =
                         if ext != ArgumentExtension::None && M::word_bits() > ty_bits(ty) as u32 {
                             M::word_type()
@@ -1751,7 +1775,7 @@ impl<M: ABIMachineSpec> Callee<M> {
                         } => {
                             let from_bits = ty_bits(ty) as u8;
                             let ext = M::get_ext_mode(
-                                sigs[self.sig].call_conv,
+                                sigs[self.sig].layout_conv,
                                 extension,
                                 ABIArgLocation::Reg,
                             );
@@ -1797,7 +1821,7 @@ impl<M: ABIMachineSpec> Callee<M> {
                                 "Argument stack offset greater than 2GB; should hit impl limit first",
                                 );
                             let ext = M::get_ext_mode(
-                                sigs[self.sig].call_conv,
+                                sigs[self.sig].layout_conv,
                                 extension,
                                 ABIArgLocation::Stack,
                             );
@@ -1982,7 +2006,7 @@ impl<M: ABIMachineSpec> Callee<M> {
                                 (ty, extension, ABIArgLocation::Stack)
                             }
                         };
-                        let ext = M::get_ext_mode(call_conv, extension, arg_loc);
+                        let ext = M::get_ext_mode(sigs[sig].layout_conv, extension, arg_loc);
                         let (vreg, ty) = if ext != ir::ArgumentExtension::None
                             && ty_bits(ty) < word_bits
                         {
@@ -2103,7 +2127,7 @@ impl<M: ABIMachineSpec> Callee<M> {
                                 (ty, extension, ABIArgLocation::Stack)
                             }
                         };
-                        let ext = M::get_ext_mode(callee_conv, extension, arg_loc);
+                        let ext = M::get_ext_mode(sigs[sig].layout_conv, extension, arg_loc);
                         let ty = if ext != ir::ArgumentExtension::None && ty_bits(ty) < word_bits {
                             word_ty
                         } else {
