@@ -890,7 +890,15 @@ fn aarch64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             // This shouldn't be a fixed register constraint, but it's not clear how to pick a
             // register that won't be clobbered by the callee-save restore code emitted with a
             // return_call_indirect.
-            collector.reg_fixed_use(&mut info.dest, xreg(1));
+            //
+            // Use the first of x1, x8 and x9 that doesn't pass an argument. The callee-save
+            // restore code only touches x19 and higher, and the `preserve_none` convention
+            // passes arguments in x1 and x9, the C one an indirect return pointer in x8.
+            let dest = [xreg(1), xreg(8), xreg(9)]
+                .into_iter()
+                .find(|&dest| info.uses.iter().all(|arg| arg.preg != dest))
+                .expect("a register for the callee of a tail call");
+            collector.reg_fixed_use(&mut info.dest, dest);
             for CallArgPair { vreg, preg } in &mut info.uses {
                 collector.reg_fixed_use(vreg, *preg);
             }
